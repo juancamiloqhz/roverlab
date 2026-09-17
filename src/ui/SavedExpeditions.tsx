@@ -6,6 +6,8 @@ import { loadExpeditionRecords, saveExpeditionRecord } from '../records/storage'
 import { DecisionTimeline, ObservationTable } from './DecisionTimeline';
 import { ExpeditionResults } from './ExpeditionResults';
 import { controllerLabels } from './controllerLabels';
+import { createReplay, type ExpeditionSession } from '../simulation/expedition';
+import { ExpeditionReplay } from './ExpeditionReplay';
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Expedition records are unavailable. Please try again.';
 const mergeRecords = (existing: ExpeditionRecord[], added: ExpeditionRecord[]) =>
@@ -84,6 +86,15 @@ export function SavedExpeditions({ completedRecords, onOpen }: {
 
 export function SavedExpeditionView({ record, onClose }: { record: ExpeditionRecord; onClose: () => void }) {
   const [error, setError] = useState('');
+  const [replay, setReplay] = useState<ExpeditionSession | null>(null);
+  function startReplay() {
+    setError('');
+    try {
+      const session = createReplay(record);
+      session.dispatch({ type: 'start' });
+      setReplay(session);
+    } catch (error) { setError(errorMessage(error)); }
+  }
   function download() {
     try {
       const url = URL.createObjectURL(new Blob([exportExpeditionRecord(record)], { type: 'application/json' }));
@@ -100,14 +111,20 @@ export function SavedExpeditionView({ record, onClose }: { record: ExpeditionRec
     <p>Completed {new Date(record.completedAt).toLocaleString()}. Inspecting this history requires no API key.</p>
     <div className="record-toolbar">
       <button className="secondary" onClick={onClose}>Return to live expedition</button>
+      {replay ? <button className="secondary" onClick={() => setReplay(null)}>Back to saved record</button>
+        : <button className="primary" onClick={startReplay}>Replay expedition</button>}
       <button className="primary" onClick={download}>Export expedition JSON</button>
     </div>
     {error && <p role="alert">{error}</p>}
+    {replay && <ExpeditionReplay session={replay} />}
+    {replay && <h3>Recorded final results</h3>}
     <ExpeditionResults snapshot={record.results} />
     <p>Final mission instructions: {record.results.instructions || 'None supplied.'} · Version {record.results.instructionsVersion}</p>
     <p>Delivery rubric: unrelated {record.results.rubric.unrelated}, suggestive {record.results.rubric.suggestive}, strong evidence {record.results.rubric['strong-evidence']}.</p>
-    <DecisionTimeline decisions={record.decisions} controllerHistory={record.results.controllerHistory} />
-    <ObservationTable title="Final observations" observations={record.results.observations} />
-    <ObservationTable title="Final rover memory" observations={record.results.memory} />
+    {!replay && <>
+      <DecisionTimeline decisions={record.decisions} controllerHistory={record.results.controllerHistory} />
+      <ObservationTable title="Final observations" observations={record.results.observations} />
+      <ObservationTable title="Final rover memory" observations={record.results.memory} />
+    </>}
   </section>;
 }

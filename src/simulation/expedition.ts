@@ -5,7 +5,9 @@ import { explorationCandidates, knownTerrain, observe, scienceCandidates } from 
 import { authoredScenario } from './scenario';
 import { knownStorm } from './storm';
 import { scienceRubric } from './science';
-import type { Action, ActionCandidate, ControllerInput, Decision, DustStorm, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, ExpeditionRecord, ExpeditionStartingConditions, FullWorldView, Position, Scenario, ScientificObjective } from './types';
+import { validateExpeditionRecord } from '../records/contract';
+import { sameRecordData } from '../records/history';
+import type { Action, ActionCandidate, ControllerInput, Decision, DustStorm, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, ExpeditionRecord, ExpeditionStartingConditions, FullWorldView, PlaybackSpeed, Position, Scenario, ScientificObjective } from './types';
 
 const STEP_MS = 100;
 const DURATION_MS = 300_000;
@@ -15,16 +17,38 @@ const COLLECT_MS = 4_000;
 const RECHARGE_PER_SECOND = 5;
 const roundEnergy = (value: number) => Math.round(value * 1e9) / 1e9;
 
-export function createExpedition(options: { scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController } = {}) {
-  const scenario = structuredClone(options.scenario ?? authoredScenario);
+type ExpeditionOptions = { scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController };
+
+export function createExpedition(options: ExpeditionOptions = {}) {
+  return createSimulation(options).session;
+}
+
+class ReplayHistory {
+  private cursor = 0;
+  constructor(readonly source: ExpeditionRecord) {}
+  get next() { return this.source.events[this.cursor]; }
+  get afterNext() { return this.source.events[this.cursor + 1]; }
+  accept(event: ExpeditionEvent) {
+    if (!sameRecordData(event, this.next)) {
+      throw new Error(`Cannot replay this expedition: recorded history differs at event ${this.next?.sequence ?? 'end'} (${this.next?.type ?? event.type}).`);
+    }
+    this.cursor++;
+  }
+}
+
+function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
+  const scenario = structuredClone(replay?.source.startingConditions.scenario ?? options.scenario ?? authoredScenario);
   // Reuse the world's terrain projection without installing it in rover knowledge.
   const fullTerrain = observe(scenario, scenario.base, 0, Infinity)
     .filter(item => item.kind === 'terrain')
     .map(({ id, position, terrain, blocked }) => ({ id, position, terrain, blocked }));
-  let objective = options.objective ?? 'past-water';
-  let instructions = '';
+  let objective = replay?.source.startingConditions.objective ?? options.objective ?? 'past-water';
+  let instructions = replay?.source.startingConditions.instructions ?? '';
   const baseline: ExpeditionController = { id: 'baseline', decide: input => chooseBaselineAction(input).id };
-  let controller = options.controller ?? baseline;
+  const recordedController = (id: ExpeditionController['id']): ExpeditionController => ({ id, decide() {
+    throw new Error('Replay cannot request a live controller decision.');
+  } });
+  let controller = replay ? recordedController(replay.source.startingConditions.controller) : options.controller ?? baseline;
   let decisions: Decision[] = [];
   const decisionListeners = new Set<() => void>();
   let inFlight: { decision: Decision; expedition: number; abort: AbortController } | null = null;
@@ -34,6 +58,9 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     rechargePerSecond: RECHARGE_PER_SECOND, batteryCapacity: 100, initialBattery: 100, movementEnergy: { plain: movementEnergy('plain'), rough: movementEnergy('rough') },
     waitMs: WAIT_MS, inspectMs: INSPECT_MS, collectMs: COLLECT_MS, cargoCapacity: 2, controller: controller.id,
   };
+  if (replay && !sameRecordData(startingConditions, replay.source.startingConditions)) {
+    throw new Error('Cannot replay this expedition: its simulation settings are not supported by this version of RoverLab.');
+  }
   let runStartingConditions = startingConditions;
   const completedRecords: ExpeditionRecord[] = [];
   const completionListeners = new Set<(record: ExpeditionRecord) => void>();
@@ -66,8 +93,11 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     };
   }
 
-  function record(detail: EventDetail) {
-    events.push({ ...structuredClone(detail), sequence: events.length, expedition, atMs: state.elapsedMs });
+  function record(detail: EventDetail, atMs = state.elapsedMs, recordedExpedition = expedition) {
+    const event = { ...structuredClone(detail), sequence: replay?.next?.sequence ?? events.length,
+      expedition: replay?.next?.expedition ?? recordedExpedition, atMs };
+    replay?.accept(event);
+    events.push(event);
   }
 
   function availableCandidates(): ActionCandidate[] {
@@ -84,6 +114,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
 
   function selectAction() {
     if (inFlight || state.status !== 'running' || state.currentAction || state.decisionFailure) return;
+    if (replay && replay.next?.type !== 'decision-requested') return;
     const input: ControllerInput = structuredClone({
       instructions: state.instructions, instructionsVersion: state.instructionsVersion,
       battery: state.battery, batteryCapacity: state.batteryCapacity,
@@ -100,6 +131,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     inFlight = request;
     state.decisionPending = true;
     record({ type: 'decision-requested', decision });
+    if (replay) return;
     const requestedAt = performance.now();
     try {
       const result = controller.decide(structuredClone(input), {
@@ -145,7 +177,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     }
     if (request.expedition !== expedition || decision.input.instructionsVersion !== state.instructionsVersion
       || state.status === 'ended' || state.status === 'ready' || decision.status === 'discarded') {
-      events.push({ type: 'decision-settled', decision: structuredClone(decision), expedition: request.expedition, atMs: decision.input.atMs, sequence: events.length });
+      record({ type: 'decision-settled', decision }, decision.input.atMs, request.expedition);
       completeRecord();
       selectAction();
       return;
@@ -311,6 +343,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     state.endingCondition = condition;
     pendingMs = 0;
     record({ type: 'ended', condition });
+    if (replay) return;
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
@@ -403,10 +436,10 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     else reconsiderAtWaypoint();
   }
 
-  record({ type: 'created' });
+  record(replay?.next?.type === 'reset' ? { type: 'reset', instructions } : { type: 'created' });
   sense();
 
-  return {
+  const session = {
     getSnapshot: () => structuredClone(state),
     getCompletedRecords: () => structuredClone(completedRecords),
     onExpeditionCompleted(listener: (record: ExpeditionRecord) => void) {
@@ -453,7 +486,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
         reconsiderAtWaypoint();
         selectAction();
       } else if (command.type === 'set-controller' && state.status === 'ready') {
-        const next = command.controller === 'baseline' ? baseline : options.typesafeController;
+        const next = replay ? recordedController(command.controller) : command.controller === 'baseline' ? baseline : options.typesafeController;
         if (next && next.id !== controller.id) {
           controller = next;
           state.controller = controller.id;
@@ -520,6 +553,119 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       }
     },
   };
+
+  function consumeReplayEvents() {
+    while (replay?.next && replay.next.atMs === state.elapsedMs) {
+      const event = replay.next;
+      switch (event.type) {
+        case 'started': session.dispatch({ type: 'start' }); break;
+        case 'paused': session.dispatch({ type: 'pause' }); break;
+        case 'resumed': session.dispatch({ type: state.decisionFailure ? 'retry-decision' : 'resume' }); break;
+        case 'speed-changed': session.dispatch({ type: 'set-speed', speed: event.speed }); break;
+        case 'objective-selected': session.dispatch({ type: 'set-objective', objective: event.objective }); break;
+        case 'instructions-changed': session.dispatch({ type: 'set-instructions', instructions: event.instructions }); break;
+        case 'storm-introduced': session.dispatch({ type: 'introduce-storm' }); break;
+        case 'controller-selected':
+          if (event.controller === 'scripted') throw new Error('Cannot replay this expedition: unsupported controller selection.');
+          session.dispatch({ type: 'set-controller', controller: event.controller });
+          break;
+        case 'controller-changed': session.dispatch({ type: 'continue-with-baseline' }); break;
+        case 'inference-attempt':
+          if (!inFlight || inFlight.decision.id !== event.decisionId) throw new Error('Cannot replay this expedition: missing recorded decision.');
+          state.inferenceAttempts++;
+          inFlight.decision.inferenceAttempts++;
+          state.decisionRevision++;
+          record({ type: 'inference-attempt', decisionId: inFlight.decision.id, attempt: state.inferenceAttempts, controller: controller.id });
+          break;
+        case 'decision-requested': selectAction(); break;
+        case 'decision-invalid': {
+          const decision = replay.source.decisions[event.decisionId - 1]!;
+          applyDecision({ failure: decision.failure, probabilities: decision.probabilities, confidence: decision.confidence }, decision.latencyMs!);
+          break;
+        }
+        case 'decision-settled': applyDecision(null, event.decision.latencyMs!); break;
+        case 'decision-discarded': {
+          // Instruction edits and manual stop cancel pending decisions before
+          // recording the command itself. Re-execute that command as one unit.
+          const commandEvent = replay.afterNext;
+          if (commandEvent?.type === 'instructions-changed') session.dispatch({ type: 'set-instructions', instructions: commandEvent.instructions });
+          else session.dispatch({ type: 'stop' });
+          break;
+        }
+        case 'action-cancelled':
+        case 'ended': session.dispatch({ type: 'stop' }); break;
+        case 'decision-made': applyDecision({ selectedCandidateId: event.selectedCandidateId,
+          probabilities: event.probabilities, confidence: event.confidence }, event.latencyMs); break;
+        default: throw new Error(`Cannot replay this expedition: unsupported ${event.type} event at ${event.atMs} ms.`);
+      }
+      if (replay.next === event) throw new Error(`Cannot replay this expedition: ${event.type} cannot execute at ${event.atMs} ms.`);
+    }
+    if (replay && !replay.next && (!sameRecordData(state, replay.source.results) || !sameRecordData(decisions, replay.source.decisions))) {
+      throw new Error('Cannot replay this expedition: simulated results differ from the saved results.');
+    }
+  }
+
+  return { session, consumeReplayEvents, advanceReplay() {
+    if (state.status !== 'running' || state.decisionPending || !state.currentAction) {
+      throw new Error('Cannot replay this expedition: the recorded history cannot advance.');
+    }
+    session.advanceWallTime(STEP_MS / state.speed);
+    consumeReplayEvents();
+  } };
 }
 
 export type ExpeditionSession = ReturnType<typeof createExpedition>;
+
+export function createReplay(value: unknown): ExpeditionSession {
+  const source = validateExpeditionRecord(value);
+  // Verify execution as well as the JSON contract before exposing any playback.
+  // This also bounds replay to the supported simulator settings and time budget.
+  const verificationHistory = new ReplayHistory(source);
+  const verification = createSimulation({}, verificationHistory);
+  verification.consumeReplayEvents();
+  while (verificationHistory.next) verification.advanceReplay();
+  let history = new ReplayHistory(source);
+  let simulation = createSimulation({}, history);
+  let status: ExpeditionSnapshot['status'] = 'ready';
+  let speed: PlaybackSpeed = 1;
+  let pendingMs = 0;
+  let stopped = false;
+  return {
+    getSnapshot() {
+      const snapshot = { ...simulation.session.getSnapshot(), status, speed };
+      if (stopped) { snapshot.currentAction = null; snapshot.reconsiderationReason = null; snapshot.endingCondition = 'manual-stop'; }
+      return snapshot;
+    },
+    getRecord: () => simulation.session.getRecord(),
+    getDecisions: () => simulation.session.getDecisions(),
+    getFullWorldView: () => simulation.session.getFullWorldView(),
+    getCompletedRecords: () => [],
+    onExpeditionCompleted: () => () => {},
+    onDecisionSettled: () => () => {},
+    dispatch(command) {
+      if (command.type === 'start' && status === 'ready') {
+        status = 'running';
+        simulation.consumeReplayEvents();
+        if (!history.next) status = 'ended';
+      } else if (command.type === 'pause' && status === 'running') status = 'paused';
+      else if (command.type === 'resume' && status === 'paused') status = 'running';
+      else if (command.type === 'set-speed' && status !== 'ended') speed = command.speed;
+      else if (command.type === 'stop' && (status === 'running' || status === 'paused')) { status = 'ended'; stopped = true; }
+      else if (command.type === 'reset') {
+        history = new ReplayHistory(source);
+        simulation = createSimulation({}, history);
+        status = 'ready'; speed = 1; pendingMs = 0; stopped = false;
+      }
+    },
+    advanceWallTime(deltaMs) {
+      if (!Number.isFinite(deltaMs) || deltaMs < 0) throw new RangeError('Wall time must be finite and non-negative.');
+      if (status !== 'running') return;
+      pendingMs += deltaMs * speed;
+      while (pendingMs + 1e-7 >= STEP_MS && status === 'running') {
+        pendingMs -= STEP_MS;
+        simulation.advanceReplay();
+        if (!history.next) status = 'ended';
+      }
+    },
+  };
+}

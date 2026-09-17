@@ -119,6 +119,7 @@ test('TypeSafe-only and mixed-controller histories survive browser storage and i
 
   const context = await browser.newContext({ baseURL: 'http://127.0.0.1:4173' });
   const viewer = await context.newPage();
+  await viewer.clock.install();
   let inferenceRequests = 0;
   await viewer.route('**/api/**', route => { inferenceRequests++; return route.abort(); });
   await viewer.goto('/');
@@ -130,6 +131,10 @@ test('TypeSafe-only and mixed-controller histories survive browser storage and i
     const copy = viewer.waitForEvent('download');
     await viewer.getByRole('button', { name: 'Export expedition JSON' }).click();
     expect(JSON.parse(await readFile((await (await copy).path())!, 'utf8'))).toEqual(JSON.parse(json!));
+    await viewer.getByRole('button', { name: 'Replay expedition', exact: true }).click();
+    await viewer.clock.fastForward(300_000);
+    await expect(viewer.getByRole('region', { name: 'Expedition replay', exact: true }).getByRole('status')).toHaveText('Replay complete');
+    await expect(viewer.getByRole('region', { name: 'Expedition results' })).toContainText(`Controllers used: ${controllers}`);
   }
   expect(inferenceRequests).toBe(0);
   await context.close();
