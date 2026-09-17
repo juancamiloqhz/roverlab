@@ -1,3 +1,7 @@
+## Tooling
+
+Use Bun for dependency management, package scripts, the backend runtime, and non-browser tests. Before scaffolding or changing tooling, read the Tooling section in [README.md](README.md#tooling).
+
 ## Agent skills
 
 ### Issue tracker
