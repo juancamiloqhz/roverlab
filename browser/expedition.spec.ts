@@ -114,3 +114,35 @@ test('mission control selects objectives, sees inspection and cargo, and scores 
     await expect(page.getByLabel('Samples inspected')).toHaveText('0');
   }
 });
+
+test('mission control sees energy use, separate recharging, and paused resource accounting', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  await expect(page.getByLabel('Battery charge', { exact: true })).toHaveText('100.0 / 100');
+  await expect(page.getByLabel('Energy used', { exact: true })).toHaveText('0.0 units');
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await page.clock.fastForward(47_500);
+  await expect(page.getByLabel('Current action')).toHaveText('Recharge at base');
+  await expect(page.getByLabel('Samples delivered')).toHaveText('1');
+  await expect(page.getByLabel('Science score', { exact: true })).toHaveText('10');
+  await expect(page.getByLabel('Cargo capacity')).toHaveText('0 / 2');
+  await expect(page.getByLabel('Energy used', { exact: true })).toHaveText('16.0 units');
+  await page.getByRole('button', { name: 'Pause expedition' }).click();
+  const battery = await page.getByLabel('Battery charge', { exact: true }).textContent();
+  const remaining = await page.getByLabel('Remaining expedition time').textContent();
+  await page.clock.fastForward(10_000);
+  await expect(page.getByLabel('Battery charge', { exact: true })).toHaveText(battery!);
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText(remaining!);
+  await page.screenshot({ path: 'test-results/energy-recharge.png', fullPage: true });
+  await page.getByRole('button', { name: 'Resume expedition' }).click();
+  await page.clock.fastForward(4_000);
+  await expect(page.getByLabel('Current action')).toContainText('Explore');
+  await expect(page.getByLabel('Rover coordinates')).not.toHaveText('3.00 / 13.00');
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  const results = page.getByRole('region', { name: 'Expedition results' });
+  await expect(results).toContainText('energy units used');
+  await expect(results).toContainText('Baseline controller');
+  await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await expect(page.getByLabel('Battery charge', { exact: true })).toHaveText('100.0 / 100');
+  await expect(page.getByLabel('Energy used', { exact: true })).toHaveText('0.0 units');
+});

@@ -2,6 +2,7 @@ import type { Position, Terrain, TerrainObservation } from './types';
 
 export const positionKey = ({ x, z }: Position) => `${x},${z}`;
 export const travelTimeMs = (terrain: Terrain) => terrain === 'rough' ? 8_000 : 4_000;
+export const movementEnergy = (terrain: Terrain) => terrain === 'rough' ? 4 : 2;
 export const neighbors = ({ x, z }: Position): Position[] => [
   { x: x + 1, z }, { x, z: z - 1 }, { x: x - 1, z }, { x, z: z + 1 },
 ];

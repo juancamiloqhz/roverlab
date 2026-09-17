@@ -30,12 +30,15 @@ export type Observation = TerrainObservation
   | (Observed & { kind: 'base' })
   | SampleObservation;
 type TargetedAction<Kind> = {
-  kind: Kind; target: ExplorationTarget; routeEstimate: { distanceCells: number; durationMs: number };
+  kind: Kind; target: ExplorationTarget; routeEstimate: { distanceCells: number; durationMs: number; energy: number };
 };
 export type Action =
   | TargetedAction<'explore'> | TargetedAction<'inspect'> | TargetedAction<'collect'> | TargetedAction<'return-to-base'>
+  | { kind: 'recharge'; durationMs: number }
   | { kind: 'wait'; durationMs: number };
 export type ControllerInput = {
+  battery: number;
+  batteryCapacity: number;
   objective: ScientificObjective;
   cargo: CargoSample[];
   cargoCapacity: number;
@@ -48,12 +51,15 @@ export type ControllerInput = {
   previousAction: Action | null;
 };
 export type PlaybackSpeed = 1 | 2 | 4;
-export type EndingCondition = 'timeout' | 'manual-stop';
+export type EndingCondition = 'timeout' | 'manual-stop' | 'stranded';
 export type ExpeditionCommand =
   | { type: 'start' | 'pause' | 'resume' | 'reset' | 'stop' }
   | { type: 'set-objective'; objective: ScientificObjective }
   | { type: 'set-speed'; speed: PlaybackSpeed };
 export type ExpeditionSnapshot = {
+  battery: number;
+  batteryCapacity: number;
+  energyUsed: number;
   objective: ScientificObjective;
   rubric: ScienceRubric;
   cargo: CargoSample[];
@@ -77,6 +83,7 @@ export type ExpeditionSnapshot = {
   memory: Observation[];
 };
 export type EventDetail =
+  | { type: 'energy-changed'; source: 'movement' | 'recharge'; battery: number; energyUsed: number }
   | { type: 'created' | 'started' | 'paused' | 'resumed' | 'reset' }
   | { type: 'objective-selected'; objective: ScientificObjective; rubric: ScienceRubric }
   | { type: 'sample-inspected'; sample: SampleObservation }

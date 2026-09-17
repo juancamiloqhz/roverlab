@@ -59,7 +59,7 @@ export function ExpeditionScene({ snapshot }: { snapshot: ExpeditionSnapshot }) 
         <hemisphereLight args={['#ffedcd', '#79634f', 1.7]} />
         <directionalLight castShadow position={[-5, 22, 4]} intensity={3} shadow-mapSize={[2048, 2048]} shadow-camera-left={-25} shadow-camera-right={25} shadow-camera-top={25} shadow-camera-bottom={-25} shadow-normalBias={0.04} />
         <PlanetaryArea snapshot={snapshot} />
-        {snapshot.currentAction && snapshot.currentAction.kind !== 'wait' && <group position={[snapshot.currentAction.target.position.x, 0.045, snapshot.currentAction.target.position.z]}>
+        {snapshot.currentAction && 'target' in snapshot.currentAction && <group position={[snapshot.currentAction.target.position.x, 0.045, snapshot.currentAction.target.position.z]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.4, 0.44, 32]} /><meshBasicMaterial color="#fff0c7" /></mesh>
           <Html position={[0, 0.45, 0]} center zIndexRange={[9, 0]}><span className="target-label active">{snapshot.currentAction.target.label}</span></Html>
         </group>}

@@ -21,7 +21,10 @@ function describeAction(action: Action | null, status: ExpeditionSnapshot['statu
       label: `Collect · ${action.target.label}`, description: 'Travel to the sample, then spend four seconds collecting it into cargo.',
     };
     case 'return-to-base': return {
-      label: 'Return to base', description: 'Return with cargo. Samples unload and earn science points at base.',
+      label: 'Return to base', description: 'Travel to base. Cargo unloads automatically; recharging is a separate action.',
+    };
+    case 'recharge': return {
+      label: 'Recharge at base', description: 'Replenishing the battery. Expedition time continues; accumulated energy use is preserved.',
     };
     case 'wait': return {
       label: `Wait · ${action.durationMs / 1_000} seconds`, description: 'A bounded pause. Expedition time continues.',
@@ -39,6 +42,7 @@ export function App() {
   const samples = snapshot.memory.filter(item => item.kind === 'sample');
   const currentIds = new Set(snapshot.observations.map(item => item.id));
   const active = status === 'running' || status === 'paused';
+  const endingLabel = snapshot.endingCondition && { timeout: 'Time budget reached', 'manual-stop': 'Stopped by mission control', stranded: 'Stranded rover' }[snapshot.endingCondition];
   const statusLabel = { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
   const { label: actionLabel, description: actionDescription } = describeAction(currentAction, status);
 
@@ -55,7 +59,7 @@ export function App() {
         </div>
         <div className="workspace">
           <div className="world-column">
-            <div className="world-heading"><span><i className={`status-dot ${status}`} />{statusLabel}</span><span className="world-heading-right">ORBIT CAMERA</span></div>
+            <div className="world-heading"><span><i className={`status-dot ${status}`} />{snapshot.endingCondition === 'stranded' ? 'Rover stranded' : statusLabel}</span><span className="world-heading-right">ORBIT CAMERA</span></div>
             <ExpeditionScene snapshot={snapshot} />
             <section className="control-bar" aria-label="Expedition controls">
               <div className="transport">
@@ -81,6 +85,12 @@ export function App() {
               <p className="memory-note">{status === 'ready' ? 'Choose before starting.' : 'Objective locked. Reset to choose a new expedition.'} Delivered samples earn {snapshot.rubric.unrelated} for unrelated, {snapshot.rubric.suggestive} for suggestive, or {snapshot.rubric['strong-evidence']} for strong evidence.</p>
             </section>
             <div className="time-block"><span className="field-label">TIME REMAINING</span><div className="timer" aria-label="Remaining expedition time">{formatTime(snapshot.remainingMs)}</div><div className="time-track"><div style={{ width: `${snapshot.remainingMs / snapshot.durationMs * 100}%` }} /></div><div className="time-caption"><span>Expedition time</span><span>{formatTime(snapshot.durationMs)} budget</span></div></div>
+            <section className="energy-block" aria-label="Energy resources">
+              <div className="telemetry-row"><span>Battery</span><strong aria-label="Battery charge">{snapshot.battery.toFixed(1)} / {snapshot.batteryCapacity}</strong></div>
+              <meter aria-label="Battery level" min={0} max={snapshot.batteryCapacity} low={snapshot.batteryCapacity * 0.25} high={snapshot.batteryCapacity * 0.75} optimum={snapshot.batteryCapacity} value={snapshot.battery} />
+              <div className="telemetry-row"><span>Energy used</span><strong aria-label="Energy used">{snapshot.energyUsed.toFixed(1)} units</strong></div>
+              <p className="memory-note">Movement uses energy; rough terrain costs more. Recharge at base uses expedition time.</p>
+            </section>
             <div className="action-block"><span className="field-label">CURRENT ACTION</span><strong aria-label="Current action">{actionLabel}</strong><p>{actionDescription}</p></div>
             <div className="telemetry-row"><span>Rover coordinates</span><strong aria-label="Rover coordinates">{rover.position.x.toFixed(2)} / {rover.position.z.toFixed(2)}</strong></div>
             <div className="telemetry-row"><span>Distance traveled</span><strong>{rover.distance.toFixed(1)} <span>cells</span></strong></div>
@@ -107,7 +117,7 @@ export function App() {
                 {delivery && <small>{delivery.classification === 'strong-evidence' ? 'Strong evidence' : delivery.classification === 'suggestive' ? 'Suggestive' : 'Unrelated'} · {delivery.score} science points</small>}
               </div>; })}
             </section>
-            {status === 'ended' && <section className="result" aria-label="Expedition results" aria-live="polite"><span className="field-label">ENDING CONDITION</span><h3>{snapshot.endingCondition === 'timeout' ? 'Time budget reached' : 'Stopped by mission control'}</h3><p>{scientificObjectives[snapshot.objective]} · {snapshot.scienceScore} science points from {snapshot.deliveredSamples.length} delivered samples.</p><p>{knownCells} terrain cells and {snapshot.discoveryCount} samples discovered; {snapshot.inspectionCount} inspected in {formatTime(snapshot.elapsedMs)} of expedition time.</p><p>{snapshot.cargo.length} samples remain aboard without delivery credit.</p></section>}
+            {status === 'ended' && <section className="result" aria-label="Expedition results" aria-live="polite"><span className="field-label">ENDING CONDITION</span><h3>{endingLabel}</h3>{snapshot.endingCondition === 'stranded' && <p>The battery was exhausted away from base.</p>}<p>{scientificObjectives[snapshot.objective]} · {snapshot.scienceScore} science points from {snapshot.deliveredSamples.length} delivered samples.</p><p>{knownCells} terrain cells and {snapshot.discoveryCount} samples discovered; {snapshot.inspectionCount} inspected in {formatTime(snapshot.elapsedMs)} of expedition time.</p><p>{snapshot.energyUsed.toFixed(1)} energy units used; {snapshot.battery.toFixed(1)} / {snapshot.batteryCapacity} battery remaining. Baseline controller.</p><p>{snapshot.cargo.length} samples remain aboard without delivery credit.</p></section>}
           </aside>
         </div>
         <footer><span>ROVERLAB <span className="footer-separator">/</span> AUTONOMOUS EXPLORATION</span><span>Baseline expedition · {snapshot.area.id}</span></footer>

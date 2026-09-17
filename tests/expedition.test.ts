@@ -28,7 +28,8 @@ test('a baseline expedition explores, waits, and ends after five simulated minut
   expect(record.events.slice(0, 5).map(event => event.type)).toEqual(['created', 'discovered', 'started', 'decision-made', 'action-started']);
   expect(record.events.at(-1)).toMatchObject({ type: 'ended', atMs: 300_000, condition: 'timeout' });
   expect(record.events.every((event, index) => event.sequence === index && (index === 0 || event.atMs >= record.events[index - 1]!.atMs))).toBe(true);
-  expect(record.events.some(event => event.type === 'action-started' && event.action.kind === 'wait')).toBe(true);
+  expect(new Set(record.events.flatMap(event => event.type === 'action-started' ? [event.action.kind] : [])))
+    .toEqual(new Set(['explore', 'wait', 'inspect', 'collect', 'return-to-base', 'recharge']));
   expect(record.events.some(event => event.type === 'action-completed' && event.action.kind === 'explore')).toBe(true);
   expect(expedition.getSnapshot().discoveryCount).toBeGreaterThan(0);
   expect(expedition.getSnapshot().deliveredSamples).toHaveLength(1);
@@ -100,5 +101,6 @@ test('identical commands at expedition times produce identical outcomes at every
   expect(outcomes[1]).toEqual(outcomes[0]);
   expect(outcomes[2]).toEqual(outcomes[0]);
   expect(outcomes[0]!.state.scienceScore).toBe(10);
-  expect(outcomes[0]!.state.cargo).toHaveLength(1);
+  expect(outcomes[0]!.state.cargo).toHaveLength(0);
+  expect(outcomes[0]!.events.some(event => event.type === 'action-completed' && event.action.kind === 'recharge')).toBe(true);
 });

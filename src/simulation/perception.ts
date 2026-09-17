@@ -1,4 +1,4 @@
-import { findRoute, neighbors, positionKey, travelTimeMs } from './navigation';
+import { findRoute, movementEnergy, neighbors, positionKey, travelTimeMs } from './navigation';
 import type { Action, CargoSample, Observation, Position, Scenario, TerrainObservation } from './types';
 
 // Explicitly project sensed facts; sample properties and world metadata never cross this boundary.
@@ -57,6 +57,7 @@ export function knownTerrain(memory: Observation[]): TerrainObservation[] {
 function estimateRoute(route: Position[], cells: Map<string, TerrainObservation>) {
   return {
     distanceCells: route.length,
+    energy: route.reduce((energy, step) => energy + movementEnergy(cells.get(positionKey(step))!.terrain), 0),
     durationMs: route.reduce((duration, step) => duration + travelTimeMs(cells.get(positionKey(step))!.terrain), 0),
   };
 }

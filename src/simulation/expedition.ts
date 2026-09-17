@@ -1,5 +1,5 @@
 import { chooseBaselineAction } from '../controllers/baseline';
-import { findRoute, positionKey, travelTimeMs } from './navigation';
+import { findRoute, movementEnergy, positionKey, travelTimeMs } from './navigation';
 import { explorationCandidates, knownTerrain, observe, scienceCandidates } from './perception';
 import { authoredScenario } from './scenario';
 import { scienceRubric } from './science';
@@ -10,6 +10,8 @@ const DURATION_MS = 300_000;
 const WAIT_MS = 5_000;
 const INSPECT_MS = 6_000;
 const COLLECT_MS = 4_000;
+const RECHARGE_PER_SECOND = 5;
+const roundEnergy = (value: number) => Math.round(value * 1e9) / 1e9;
 
 export function createExpedition(options: { scenario?: Scenario; objective?: ScientificObjective } = {}) {
   const scenario = structuredClone(options.scenario ?? authoredScenario);
@@ -17,6 +19,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
   const startingConditions = {
     scenario, objective, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
     travelTimeMs: { plain: travelTimeMs('plain'), rough: travelTimeMs('rough') },
+    rechargePerSecond: RECHARGE_PER_SECOND, batteryCapacity: 100, initialBattery: 100, movementEnergy: { plain: movementEnergy('plain'), rough: movementEnergy('rough') },
     waitMs: WAIT_MS, inspectMs: INSPECT_MS, collectMs: COLLECT_MS, cargoCapacity: 2, controller: 'baseline' as const,
   };
   const events: ExpeditionEvent[] = [];
@@ -30,6 +33,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
 
   function initialState(): ExpeditionSnapshot {
     return {
+      battery: 100, batteryCapacity: 100, energyUsed: 0,
       objective, rubric: structuredClone(scienceRubric), cargo: [], cargoCapacity: 2,
       deliveredSamples: [], scienceScore: 0, discoveryCount: 0, inspectionCount: 0,
       status: 'ready', durationMs: DURATION_MS, elapsedMs: 0, remainingMs: DURATION_MS, speed: 1,
@@ -45,10 +49,16 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
   }
 
   function selectAction() {
-    const candidates = explorationCandidates(state.memory, state.rover.position, state.area);
-    candidates.push(...scienceCandidates(state.memory, state.rover.position, state.cargo, state.cargoCapacity));
+    const candidates = [
+      ...explorationCandidates(state.memory, state.rover.position, state.area),
+      ...scienceCandidates(state.memory, state.rover.position, state.cargo, state.cargoCapacity),
+    ].filter(action => state.battery > 0 || !('target' in action) || action.routeEstimate.distanceCells === 0);
+    if (positionKey(state.rover.position) === positionKey(scenario.base) && state.battery < state.batteryCapacity) {
+      candidates.push({ kind: 'recharge', durationMs: Math.ceil((state.batteryCapacity - state.battery) / RECHARGE_PER_SECOND * 1_000 / STEP_MS) * STEP_MS });
+    }
     candidates.push({ kind: 'wait', durationMs: WAIT_MS });
     const input: ControllerInput = structuredClone({
+      battery: state.battery, batteryCapacity: state.batteryCapacity,
       atMs: state.elapsedMs, position: state.rover.position, sensorRange: state.sensorRange,
       objective: state.objective, cargo: state.cargo, cargoCapacity: state.cargoCapacity,
       observations: state.observations, memory: state.memory, candidates, previousAction,
@@ -57,7 +67,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     record({ type: 'decision-made', input, action, controller: 'baseline' });
     state.currentAction = action;
     actionProgressMs = 0;
-    if (action.kind !== 'wait') {
+    if ('target' in action) {
       route = findRoute(knownTerrain(state.memory), state.rover.position, action.target.position)!;
       waypointStart = { ...state.rover.position };
     }
@@ -80,7 +90,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     if (discoveries.length) record({ type: 'discovered', observations: discoveries });
   }
 
-  function completeInteraction(action: Exclude<Action, { kind: 'wait' }>): boolean {
+  function completeInteraction(action: Extract<Action, { target: unknown }>): boolean {
     if (positionKey(state.rover.position) !== positionKey(action.target.position)) return false;
     if (action.kind === 'explore') {
       state.exploredTargetIds.push(action.target.id);
@@ -138,24 +148,39 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     let completed = false;
     if (action.kind === 'wait') {
       completed = actionProgressMs >= action.durationMs;
+    } else if (action.kind === 'recharge') {
+      state.battery = Math.min(state.batteryCapacity, roundEnergy(state.battery + RECHARGE_PER_SECOND * STEP_MS / 1_000));
+      record({ type: 'energy-changed', source: 'recharge', battery: state.battery, energyUsed: state.energyUsed });
+      completed = state.battery === state.batteryCapacity;
     } else {
       const waypoint = route[0];
       if (waypoint) {
         const cell = knownTerrain(state.memory).find(item => positionKey(item.position) === positionKey(waypoint))!;
         const cellTravelMs = travelTimeMs(cell.terrain);
+        const consumed = Math.min(state.battery, movementEnergy(cell.terrain) * STEP_MS / cellTravelMs);
+        const movementMs = consumed / movementEnergy(cell.terrain) * cellTravelMs;
+        actionProgressMs -= STEP_MS - movementMs;
         const fraction = actionProgressMs / cellTravelMs;
         state.rover.position = {
           x: waypointStart.x + (waypoint.x - waypointStart.x) * fraction,
           z: waypointStart.z + (waypoint.z - waypointStart.z) * fraction,
         };
         state.rover.heading = Math.atan2(waypoint.x - waypointStart.x, waypoint.z - waypointStart.z);
-        state.rover.distance += STEP_MS / cellTravelMs;
+        state.rover.distance += consumed / movementEnergy(cell.terrain);
+        state.battery = roundEnergy(state.battery - consumed);
+        state.energyUsed = roundEnergy(state.energyUsed + consumed);
+        record({ type: 'energy-changed', source: 'movement', battery: state.battery, energyUsed: state.energyUsed });
         if (actionProgressMs >= cellTravelMs) {
           state.rover.position = { ...waypoint };
           waypointStart = { ...waypoint };
           route.shift();
           actionProgressMs = 0;
         }
+      }
+      if (state.battery === 0 && positionKey(state.rover.position) !== positionKey(scenario.base)) {
+        sense();
+        finish('stranded');
+        return;
       }
       const interactionMs = action.kind === 'inspect' ? INSPECT_MS : action.kind === 'collect' ? COLLECT_MS : 0;
       completed = route.length === 0 && actionProgressMs >= interactionMs;

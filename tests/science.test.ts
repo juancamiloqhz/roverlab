@@ -66,7 +66,7 @@ test.each([
   expect(expedition.getSnapshot()).toMatchObject({ cargo: [], scienceScore: 15, discoveryCount: 4, inspectionCount: 3 });
   expect(expedition.getSnapshot().deliveredSamples.map(sample => sample.score)).toEqual([...scores]);
   const decisions = expedition.getRecord().events.filter(event => event.type === 'decision-made');
-  expect(decisions.flatMap(event => event.input.candidates).some(action => action.kind !== 'wait' && action.target.id === 'blocked')).toBe(false);
+  expect(decisions.flatMap(event => event.input.candidates).some(action => 'target' in action && action.target.id === 'blocked')).toBe(false);
   expect(expedition.getRecord().events.filter(event => event.type === 'samples-delivered')).toHaveLength(2);
   expedition.dispatch({ type: 'reset' });
   expect(expedition.getSnapshot()).toMatchObject({ objective, cargo: [], deliveredSamples: [], inspectionCount: 0, scienceScore: 0 });
@@ -126,19 +126,20 @@ test('discovery leads to timed inspection, separate collection, and credit only 
 test.each(['manual-stop', 'timeout'] as const)('%s leaves onboard cargo uncredited', ending => {
   const scenario = structuredClone(corridor);
   if (ending === 'timeout') {
-    scenario.width = 72;
-    scenario.sensorRange = 71;
-    scenario.samples[0]!.position.x = 70;
+    scenario.width = 23;
+    scenario.sensorRange = 22;
+    scenario.samples = [19, 20, 21].map((x, index) => ({ ...corridor.samples[0]!, id: String(index), position: { x, z: 0 } }));
   }
   const expedition = createExpedition({ scenario });
   expedition.dispatch({ type: 'start' });
   expedition.advanceWallTime(ending === 'timeout' ? 300_000 : 23_000);
   if (ending === 'manual-stop') expedition.dispatch({ type: 'stop' });
   expect(expedition.getSnapshot()).toMatchObject({
-    status: 'ended', endingCondition: ending, cargo: [{ sampleId: 'a' }],
-    deliveredSamples: [], scienceScore: 0, discoveryCount: 1, inspectionCount: 1,
+    status: 'ended', endingCondition: ending, cargo: [{ sampleId: ending === 'timeout' ? '2' : 'a' }],
+    scienceScore: ending === 'timeout' ? 20 : 0,
+    discoveryCount: ending === 'timeout' ? 3 : 1, inspectionCount: ending === 'timeout' ? 3 : 1,
   });
-  expect(expedition.getRecord().events.some(event => event.type === 'samples-delivered')).toBe(false);
+  expect(expedition.getSnapshot().deliveredSamples).toHaveLength(ending === 'timeout' ? 2 : 0);
   const ended = expedition.getSnapshot();
   expedition.advanceWallTime(300_000);
   expect(expedition.getSnapshot()).toEqual(ended);

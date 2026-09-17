@@ -24,17 +24,18 @@ test('a controller receives only sensed terrain, objects, and routes through the
   ];
   const explore: Action = {
     kind: 'explore', target: { id: 'frontier:1,0', label: 'Frontier 1 / 0', position: { x: 1, z: 0 } },
-    routeEstimate: { distanceCells: 1, durationMs: 4_000 },
+    routeEstimate: { distanceCells: 1, durationMs: 4_000, energy: 2 },
   };
   const inspect: Action = {
     kind: 'inspect', target: { id: 'visible', label: 'Sample A', position: { x: 1, z: 0 } },
-    routeEstimate: { distanceCells: 1, durationMs: 4_000 },
+    routeEstimate: { distanceCells: 1, durationMs: 4_000, energy: 2 },
   };
   expect(decision).toMatchObject({
     type: 'decision-made', controller: 'baseline', action: inspect,
   });
   if (decision?.type !== 'decision-made') throw new Error('Missing controller input');
   expect(decision.input).toEqual({
+    battery: 100, batteryCapacity: 100,
     atMs: 0, position: { x: 0, z: 0 }, sensorRange: 1,
     objective: 'past-water', cargo: [], cargoCapacity: 2,
     observations, memory: observations, previousAction: null,
