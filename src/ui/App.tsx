@@ -1,5 +1,4 @@
 import { ExpeditionScene } from '../scene/ExpeditionScene';
-import { authoredScenario } from '../simulation/scenario';
 import { useExpedition } from './useExpedition';
 import './styles.css';
 
@@ -11,6 +10,9 @@ const formatTime = (ms: number) => {
 export function App() {
   const { snapshot, dispatch } = useExpedition();
   const { status, currentAction, rover } = snapshot;
+  const knownCells = snapshot.memory.filter(item => item.kind === 'terrain').length;
+  const samples = snapshot.memory.filter(item => item.kind === 'sample');
+  const currentIds = new Set(snapshot.observations.map(item => item.id));
   const active = status === 'running' || status === 'paused';
   const statusLabel = { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
   const actionLabel = currentAction?.kind === 'explore' ? `Explore · ${currentAction.target.label}`
@@ -24,8 +26,8 @@ export function App() {
       </header>
       <main>
         <div className="page-heading">
-          <div><p className="eyebrow">BASELINE EXPEDITION</p><h2>Ochre Basin<span className="title-dot">.</span></h2><p className="page-description">A small world. An autonomous rover. See where it goes.</p></div>
-          <div className="scenario-info"><span>AUTHORED SCENARIO</span><strong>21 × 19 <span>grid</span></strong><small>{snapshot.durationMs / 60_000}-minute expedition</small></div>
+          <div><p className="eyebrow">BASELINE EXPEDITION</p><h2>{snapshot.area.name}<span className="title-dot">.</span></h2><p className="page-description">An unknown world. An autonomous rover. Discover it together.</p></div>
+          <div className="scenario-info"><span>AUTHORED SCENARIO</span><strong>{snapshot.area.width} × {snapshot.area.depth} <span>grid</span></strong><small>{snapshot.durationMs / 60_000}-minute expedition</small></div>
         </div>
         <div className="workspace">
           <div className="world-column">
@@ -51,11 +53,22 @@ export function App() {
             <div className="action-block"><span className="field-label">CURRENT ACTION</span><strong aria-label="Current action">{actionLabel}</strong><p>{currentAction?.kind === 'explore' ? 'Following a grid route to the next target.' : currentAction?.kind === 'wait' ? 'A bounded pause. Expedition time continues.' : status === 'ended' ? 'Reset to explore the same starting area again.' : 'Start when you’re ready. No API key needed.'}</p></div>
             <div className="telemetry-row"><span>Rover coordinates</span><strong aria-label="Rover coordinates">{rover.position.x.toFixed(2)} / {rover.position.z.toFixed(2)}</strong></div>
             <div className="telemetry-row"><span>Distance traveled</span><strong>{rover.distance.toFixed(1)} <span>cells</span></strong></div>
-            <div className="targets-block"><span className="field-label">EXPLORATION TARGETS</span>{authoredScenario.explorationTargets.map((target, index) => <div className="target-row" key={target.id}><span className={snapshot.exploredTargetIds.includes(target.id) ? 'target-number reached' : 'target-number'}>{snapshot.exploredTargetIds.includes(target.id) ? '✓' : `0${index + 1}`}</span><span>{target.label}</span><span className="target-state">{snapshot.exploredTargetIds.includes(target.id) ? 'Reached' : currentAction?.kind === 'explore' && currentAction.target.id === target.id ? 'En route' : 'Pending'}</span></div>)}</div>
-            {status === 'ended' && <section className="result" aria-live="polite"><span className="field-label">ENDING CONDITION</span><h3>{snapshot.endingCondition === 'timeout' ? 'Time budget reached' : 'Stopped by mission control'}</h3><p>{snapshot.exploredTargetIds.length} targets reached in {formatTime(snapshot.elapsedMs)} of expedition time.</p></section>}
+            <section className="discovery-block" aria-label="Discovery progress">
+              <span className="field-label">DISCOVERY</span>
+              <div className="telemetry-row"><span>Terrain discovered</span><strong aria-label="Terrain discovered">{knownCells} / {snapshot.area.width * snapshot.area.depth} cells</strong></div>
+              <div className="telemetry-row"><span>Samples discovered</span><strong aria-label="Samples discovered">{samples.length}</strong></div>
+              <p className="memory-note">Sensors reach {snapshot.sensorRange} cells. Dim terrain is remembered; its conditions may have changed. Diamonds mark rough terrain.</p>
+              {samples.length === 0 && <p className="memory-note">No samples discovered yet.</p>}
+              {samples.map(sample => <div className="sample-row" key={sample.id}>
+                <strong>{sample.label}</strong>
+                <span aria-label={`${sample.label} observation`}>{currentIds.has(sample.id) ? 'In range' : 'Remembered'} · Last seen {formatTime(Math.floor(sample.observedAtMs / 1_000) * 1_000)}.{Math.floor(sample.observedAtMs % 1_000 / 100)}</span>
+                <small>Properties unknown · Inspection required</small>
+              </div>)}
+            </section>
+            {status === 'ended' && <section className="result" aria-live="polite"><span className="field-label">ENDING CONDITION</span><h3>{snapshot.endingCondition === 'timeout' ? 'Time budget reached' : 'Stopped by mission control'}</h3><p>{knownCells} terrain cells and {samples.length} samples discovered in {formatTime(snapshot.elapsedMs)} of expedition time.</p></section>}
           </aside>
         </div>
-        <footer><span>ROVERLAB <span className="footer-separator">/</span> AUTONOMOUS EXPLORATION</span><span>Baseline expedition · {authoredScenario.id}</span></footer>
+        <footer><span>ROVERLAB <span className="footer-separator">/</span> AUTONOMOUS EXPLORATION</span><span>Baseline expedition · {snapshot.area.id}</span></footer>
       </main>
     </div>
   );

@@ -1,21 +1,27 @@
 import type { Scenario } from './types';
 
 export const authoredScenario: Scenario = {
-  id: 'ochre-basin-v1',
+  id: 'ochre-basin-v2',
   name: 'Ochre Basin',
   width: 21,
   depth: 19,
   base: { x: 3, z: 13 },
+  sensorRange: 3,
   obstacles: [
     { x: 6, z: 10 }, { x: 6, z: 11 }, { x: 6, z: 12 },
     { x: 11, z: 5 }, { x: 11, z: 6 }, { x: 11, z: 7 }, { x: 12, z: 7 },
     { x: 14, z: 11 }, { x: 15, z: 11 }, { x: 16, z: 11 },
     { x: 3, z: 4 }, { x: 4, z: 4 }, { x: 18, z: 16 },
   ],
-  explorationTargets: [
-    { id: 'near-ridge', label: 'Near ridge', position: { x: 8, z: 12 } },
-    { id: 'north-basin', label: 'North basin', position: { x: 8, z: 3 } },
-    { id: 'east-rim', label: 'East rim', position: { x: 17, z: 5 } },
-    { id: 'south-flats', label: 'South flats', position: { x: 16, z: 14 } },
+  roughTerrain: [
+    { x: 8, z: 12 }, { x: 8, z: 13 }, { x: 8, z: 14 },
+    { x: 9, z: 12 }, { x: 9, z: 13 }, { x: 9, z: 14 },
+    { x: 15, z: 5 }, { x: 16, z: 5 }, { x: 17, z: 5 },
+  ],
+  samples: [
+    { id: 'a', label: 'Sample A', position: { x: 7, z: 13 }, properties: ['Layered sediment'] },
+    // Tempting site beside the planned storm center (15, 13); the storm is ticket 08.
+    { id: 'b', label: 'Sample B', position: { x: 15, z: 13 }, properties: ['Crystalline inclusions'] },
+    { id: 'c', label: 'Sample C', position: { x: 17, z: 4 }, properties: ['Veined rock'] },
   ],
 };

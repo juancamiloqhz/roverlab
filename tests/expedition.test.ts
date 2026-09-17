@@ -25,11 +25,13 @@ test('a baseline expedition explores, waits, and ends after five simulated minut
   });
   const record = expedition.getRecord();
   expect(record.startingConditions.scenario.base).toEqual(initial.rover.position);
-  expect(record.events.slice(0, 3).map(event => event.type)).toEqual(['created', 'started', 'action-started']);
+  expect(record.events.slice(0, 5).map(event => event.type)).toEqual(['created', 'discovered', 'started', 'decision-made', 'action-started']);
   expect(record.events.at(-1)).toMatchObject({ type: 'ended', atMs: 300_000, condition: 'timeout' });
   expect(record.events.every((event, index) => event.sequence === index && (index === 0 || event.atMs >= record.events[index - 1]!.atMs))).toBe(true);
   expect(record.events.some(event => event.type === 'action-started' && event.action.kind === 'wait')).toBe(true);
   expect(record.events.some(event => event.type === 'action-completed' && event.action.kind === 'explore')).toBe(true);
+  expect(expedition.getSnapshot().memory.filter(item => item.kind === 'sample').map(item => item.sampleId)).toEqual(['a', 'b', 'c']);
+  expect(expedition.getSnapshot().memory.filter(item => item.kind === 'terrain').length).toBeGreaterThan(200);
   const ended = expedition.getSnapshot();
   expedition.advanceWallTime(50_000);
   expect(expedition.getSnapshot()).toEqual(ended);
@@ -68,9 +70,9 @@ test('identical commands at expedition times produce identical outcomes at every
     expedition.dispatch({ type: 'set-speed', speed });
     expect(expedition.getSnapshot().speed).toBe(speed);
     expedition.dispatch({ type: 'start' });
-    expedition.advanceWallTime(24_000 / speed);
-    expect(expedition.getSnapshot().elapsedMs).toBe(24_000);
-    expect(expedition.getSnapshot().rover.position).toEqual({ x: 8, z: 12 });
+    expedition.advanceWallTime(12_000 / speed);
+    expect(expedition.getSnapshot().elapsedMs).toBe(12_000);
+    expect(expedition.getSnapshot().rover.position).toEqual({ x: 6, z: 13 });
     expect(expedition.getSnapshot().currentAction?.kind).toBe('wait');
     const waiting = expedition.getSnapshot().rover;
     expedition.advanceWallTime(2_000 / speed);
@@ -79,9 +81,9 @@ test('identical commands at expedition times produce identical outcomes at every
     expedition.advanceWallTime(500_000);
     expedition.dispatch({ type: 'resume' });
     // Speed 1 uses one long scheduler delay; the others use irregular batches.
-    if (speed === 1) expedition.advanceWallTime(274_000);
+    if (speed === 1) expedition.advanceWallTime(286_000);
     else {
-      let remainingWallMs = 274_000 / speed;
+      let remainingWallMs = 286_000 / speed;
       while (remainingWallMs > 0) {
         const batch = Math.min(remainingWallMs, speed === 2 ? 37 : 61);
         expedition.advanceWallTime(batch);
@@ -96,5 +98,5 @@ test('identical commands at expedition times produce identical outcomes at every
   });
   expect(outcomes[1]).toEqual(outcomes[0]);
   expect(outcomes[2]).toEqual(outcomes[0]);
-  expect(outcomes[0]!.state.exploredTargetIds).toEqual(['near-ridge', 'north-basin', 'east-rim', 'south-flats']);
+  expect(outcomes[0]!.state.memory.filter(item => item.kind === 'sample').map(item => item.sampleId)).toEqual(['a', 'b', 'c']);
 });

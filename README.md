@@ -6,9 +6,9 @@ Give a rover a mission, change its environment, and inspect how its choices affe
 
 ## Project status
 
-[Ticket 01: Watch an autonomous expedition](.scratch/first-playable-release/issues/01-watch-an-autonomous-expedition.md) is implemented. Start a local 3D baseline expedition, watch autonomous grid navigation and bounded waits, orbit the camera, and use pause/resume, reset, stop, and 1×/2×/4× playback. A five-minute timeout or manual stop displays the ending condition. No API key is needed.
+[Ticket 01: Watch an autonomous expedition](.scratch/first-playable-release/issues/01-watch-an-autonomous-expedition.md) and [ticket 02: Discover the area through limited perception](.scratch/first-playable-release/issues/02-discover-the-area-through-limited-perception.md) are implemented. Start a local 3D baseline expedition, watch the rover discover terrain and three sample sites, orbit the camera, and use pause/resume, reset, stop, and 1×/2×/4× playback. A five-minute timeout or manual stop displays the ending condition and discoveries. No API key is needed.
 
-The remaining [first playable release tickets](.scratch/first-playable-release/issues/) add limited perception, samples, energy, scientific objectives, TypeSafe decisions, storms, and saved records/replay. The current scene shows the authored area; limited perception belongs to ticket 02.
+The remaining [first playable release tickets](.scratch/first-playable-release/issues/) add sample inspection/collection, energy, scientific objectives, TypeSafe decisions, storms, observation aids, and saved records/replay. Sample properties remain unknown until inspection is implemented in ticket 03.
 ## Planned complete demo
 
 A local 3D sandbox with one rover, a designed planetary area, a charging base, three sample sites, and a localized dust storm. Five-minute expeditions offer two scientific objectives, editable mission instructions, two-sample cargo capacity, and delivery-only scoring. The rover chooses between exploration, inspection, collection, returning to base, recharging, and waiting. Decisions can be inspected, saved, and replayed.
@@ -40,6 +40,7 @@ Open the local address printed by Vite (normally `http://127.0.0.1:5173`). Start
 ```sh
 bun run typecheck
 bun test tests/expedition.test.ts # focused public-session scenarios
+bun test tests/perception.test.ts # sensor boundaries, memory, and known-map navigation
 bun test                        # all non-browser tests
 bun run build
 bun run preview                 # serve the production build locally
@@ -58,15 +59,19 @@ On Linux, Playwright may also need system browser libraries (`bunx playwright in
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium bun run test:browser
 ```
 
-`bun run check` runs typechecking, the production build, the full Bun suite, and the browser smoke check. The smoke check starts its own Vite server on port 4173. It verifies the scene and labels, autonomous movement, an orbit-camera change while paused, every playback setting, reset, timeout, and manual stop with controlled browser time. Screenshots and failure traces go to ignored `test-results/`.
+`bun run check` runs typechecking, the production build, the full Bun suite, and the browser smoke checks. These start their own Vite server on port 4173. They verify the scene and labels, autonomous movement, an orbit-camera change while paused, every playback setting, reset, timeout, manual stop, visible sample discovery, and remembered observations with controlled browser time. Screenshots and failure traces go to ignored `test-results/`.
 
 ### Expedition boundary
 
 `createExpedition()` in `src/simulation/expedition.ts` exposes `dispatch(command)`, `advanceWallTime(milliseconds)`, `getSnapshot()`, and `getRecord()`. The UI and Bun scenarios use this same boundary. A browser timer supplies wall time independently of React Three Fiber frames; controls account for elapsed wall time before changing speed or status. Camera interaction only changes the presentation.
 
-The session advances in 100 ms simulation steps, preserving partial steps across scheduler calls and pauses. Travel takes four simulated seconds per grid cell. The baseline chooses from supplied reachable exploration targets in authored order, waits five seconds after each target, then repeats bounded waits after reaching all targets. Grid paths avoid the authored obstacles with stable tie-breaking. There is no direct piloting.
+The session advances in 100 ms simulation steps, preserving partial steps across scheduler calls and pauses. Entering plain terrain takes four simulated seconds per cell; rough terrain takes eight. Routes minimize travel time through known traversable cells, with stable tie-breaking. The baseline chooses the nearest supplied frontier by estimated travel time (east, then north on ties), waits five seconds after each target, and repeats bounded waits when no reachable frontier remains. There is no direct piloting.
 
-Snapshots and records are detached copies. `getRecord()` captures starting conditions and ordered lifecycle/action events with simulation timestamps and baseline attribution. Reset preserves the session history, increments the event's expedition number, and restarts simulated time at zero. Persistence, import/export, and replay are later tickets.
+Sensors accurately observe cell centers and objects within a three-cell Euclidean radius, including during travel, without occlusion. The snapshot separates current observations from timestamped rover memory. The scene renders only that memory: bright terrain is in range, dim terrain is remembered, and the dark surface is unknown. Sample labels and mission-control entries distinguish current from remembered observations and show last-seen times. Diamonds mark rough terrain. The authored sites are Sample A near base, Sample B beside the planned storm center at (15, 13), and distant Sample C at (17, 4); their properties are private world data.
+
+Concrete exploration targets are known, reachable cells bordering unknown terrain. Neither candidates nor route estimates use undiscovered terrain or sample properties. The controller receives only current observations, memory, rover position, sensor range, previous action, and those candidates. `createExpedition({ scenario })` supplies alternate starting conditions for public-session scenarios; the browser uses the authored scenario. Rendering reads snapshots and never imports the world catalog.
+
+Snapshots and records are detached copies. `getRecord()` captures full starting conditions separately from controller inputs, plus timestamped first discoveries, exact decision inputs/selections, and ordered lifecycle/action events with baseline attribution. Memory stores the last observation time, refreshed only while an object or cell is sensed. Reset preserves the session history, increments the event's expedition number, restarts simulated time at zero, and restores only the initial sensor observations. Persistence, import/export, and replay are later tickets.
 
 ## Design principles
 

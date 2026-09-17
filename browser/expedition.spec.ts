@@ -15,7 +15,7 @@ test('mission control watches a 3D baseline expedition, orbits while paused, and
   await page.screenshot({ path: 'test-results/expedition-ready.png', fullPage: true });
   await page.getByRole('button', { name: 'Start expedition' }).click();
   await page.clock.runFor(1_000);
-  await expect(page.getByLabel('Current action')).toContainText('Near ridge');
+  await expect(page.getByLabel('Current action')).toContainText('Frontier');
   await expect(page.getByLabel('Rover coordinates')).not.toHaveText('3.00 / 13.00');
   await page.getByRole('button', { name: 'Pause expedition' }).click();
   const pausedTime = await page.getByLabel('Remaining expedition time').textContent();
@@ -46,4 +46,34 @@ test('mission control watches a 3D baseline expedition, orbits while paused, and
   await expect(page.getByRole('heading', { name: 'Stopped by mission control' })).toBeVisible();
   await page.screenshot({ path: 'test-results/expedition.png', fullPage: true });
   expect(errors).toEqual([]);
+});
+
+test('the scene reveals discoveries, distinguishes memory, and hides them again on reset', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  const scene = page.getByRole('region', { name: 'Planetary scene' });
+  await expect(scene.locator('canvas')).toBeVisible();
+  await expect(page.getByLabel('Terrain discovered')).toHaveText('29 / 399 cells');
+  await expect(page.getByLabel('Samples discovered')).toHaveText('0');
+  await expect(scene.getByText(/Sample [ABC]/)).toHaveCount(0);
+  const beforeDiscovery = await scene.screenshot();
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await page.clock.fastForward(10_000);
+  await page.getByRole('button', { name: 'Pause expedition' }).click();
+  await expect(scene.getByText('Sample A · In range', { exact: true })).toBeVisible();
+  await expect(scene.getByText(/Sample [BC]/)).toHaveCount(0);
+  await expect(page.getByLabel('Samples discovered')).toHaveText('1');
+  await expect(page.getByLabel('Terrain discovered')).not.toHaveText('29 / 399 cells');
+  expect(await scene.screenshot()).not.toEqual(beforeDiscovery);
+  await page.screenshot({ path: 'test-results/perception-discovery.png', fullPage: true });
+  await page.getByRole('button', { name: 'Resume expedition' }).click();
+  await page.clock.fastForward(90_000);
+  await page.getByRole('button', { name: 'Pause expedition' }).click();
+  await expect(scene.getByText('Sample A · Remembered', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Sample A observation')).toContainText('Remembered · Last seen 00:42.9');
+  await page.screenshot({ path: 'test-results/perception-memory.png', fullPage: true });
+  await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await expect(page.getByLabel('Terrain discovered')).toHaveText('29 / 399 cells');
+  await expect(page.getByLabel('Samples discovered')).toHaveText('0');
+  await expect(scene.getByText(/Sample [ABC]/)).toHaveCount(0);
 });

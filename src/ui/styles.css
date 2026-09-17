@@ -43,6 +43,8 @@ h2 { font-size: clamp(32px, 3vw, 44px); letter-spacing: -1.7px; font-weight: 500
 .legend-square { background: #64725f; }
 .legend-ring { border-radius: 50%; }
 .scene-label { display: block; background: #263832e8; color: #e3ebd5; white-space: nowrap; border-radius: 4px; padding: 5px 7px; font-size: 9px; letter-spacing: .3px; pointer-events: none; user-select: none; }
+.scene-label.remembered { background: #414b46e8; color: #c3c8bf; border: 1px dashed #a1aba0; }
+.sample-label { background: #285849ed; }
 .rover-label { background: #e5e9d6; color: #2a3b31; border: 1px solid #f9f7dc; }
 .target-label { display: block; white-space: nowrap; color: #493f30; background: #e1c5a66b; border: 1px solid #8e755430; border-radius: 3px; padding: 4px 6px; font-size: 8px; pointer-events: none; user-select: none; }
 .target-label.active { background: #f3dfbfe6; color: #493f30; }
@@ -77,12 +79,12 @@ h2 { font-size: clamp(32px, 3vw, 44px); letter-spacing: -1.7px; font-weight: 500
 .telemetry-row { display: flex; justify-content: space-between; font-size: 10px; color: #94a699; margin-top: 18px; }
 .telemetry-row strong { font-weight: 500; font-variant-numeric: tabular-nums; color: #d8e0d5; }
 .telemetry-row strong span { font-size: 9px; color: #94a699; }
-.targets-block { border-top: 1px solid #334039; margin-top: 22px; padding-top: 22px; }
-.targets-block .field-label { display: block; margin-bottom: 13px; }
-.target-row { display: flex; align-items: center; gap: 9px; margin-top: 14px; font-size: 10px; color: #c7d2c4; }
-.target-number { display: grid; place-items: center; width: 22px; height: 22px; font-size: 8px; color: #93a68e; border: 1px solid #405044; border-radius: 50%; }
-.target-number.reached { background: #405340; color: #d3ecc3; }
-.target-state { margin-left: auto; color: #8ea08d; font-size: 9px; }
+.discovery-block { border-top: 1px solid #334039; margin-top: 22px; padding-top: 22px; grid-column: 1 / -1; }
+.memory-note { font-size: 10px; line-height: 1.6; color: #9cafa3; margin: 14px 0 0; }
+.sample-row { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #334039; padding-top: 12px; margin-top: 14px; font-size: 11px; }
+.sample-row strong { font-weight: 500; color: #d5e7c9; }
+.sample-row span { color: #b7c8bb; font-size: 10px; font-variant-numeric: tabular-nums; }
+.sample-row small { color: #8b9f90; font-size: 9px; }
 .result { margin-top: 24px; padding: 16px; background: #283a30; border: 1px solid #4d614b; border-radius: 6px; }
 .result h3 { font-size: 15px; font-weight: 500; line-height: 1.5; margin: 10px 0 7px; }
 .result p { font-size: 11px; color: #a8bba3; line-height: 1.6; margin: 0; }
