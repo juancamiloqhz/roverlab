@@ -4,7 +4,7 @@
 
 Build a local browser-based 3D planetary exploration sandbox for observing and comparing an autonomous rover's decisions. Mission control supplies priorities and changes environmental conditions; the rover chooses its actions.
 
-The design decisions below were accepted during the design interview, and the consolidated design was confirmed on 2026-09-16. The [first playable release specification](../.scratch/first-playable-release/spec.md) is published in the local issue tracker with status `ready-for-agent` and the agreed testing approach. The 12 approved [implementation tickets](../.scratch/first-playable-release/issues/) are published with their blocking dependencies. The first unblocked step is [ticket 01: Watch an autonomous expedition](../.scratch/first-playable-release/issues/01-watch-an-autonomous-expedition.md). Application implementation has not started.
+The design decisions below were accepted during the design interview, and the consolidated design was confirmed on 2026-09-16. The [first playable release specification](../.scratch/first-playable-release/spec.md) is published in the local issue tracker with status `ready-for-agent` and the agreed testing approach. The 12 approved [implementation tickets](../.scratch/first-playable-release/issues/) are published with their blocking dependencies. [Ticket 01: Watch an autonomous expedition](../.scratch/first-playable-release/issues/01-watch-an-autonomous-expedition.md) is implemented: the local 3D baseline expedition, fixed-step navigation, lifecycle controls, and event capture are available. See the [README](../README.md#tooling) for start and verification commands. The remaining tickets retain their published scope.
 
 ## Experience
 
