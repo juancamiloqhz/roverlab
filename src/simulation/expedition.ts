@@ -3,7 +3,7 @@ import { findRoute, movementEnergy, positionKey, travelTimeMs } from './navigati
 import { explorationCandidates, knownTerrain, observe, scienceCandidates } from './perception';
 import { authoredScenario } from './scenario';
 import { scienceRubric } from './science';
-import type { Action, ControllerInput, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, Position, Scenario, ScientificObjective } from './types';
+import type { Action, ActionCandidate, ControllerInput, Decision, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, Position, Scenario, ScientificObjective } from './types';
 
 const STEP_MS = 100;
 const DURATION_MS = 300_000;
@@ -13,14 +13,19 @@ const COLLECT_MS = 4_000;
 const RECHARGE_PER_SECOND = 5;
 const roundEnergy = (value: number) => Math.round(value * 1e9) / 1e9;
 
-export function createExpedition(options: { scenario?: Scenario; objective?: ScientificObjective } = {}) {
+export function createExpedition(options: { scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController } = {}) {
   const scenario = structuredClone(options.scenario ?? authoredScenario);
   let objective = options.objective ?? 'past-water';
+  let instructions = '';
+  const controller: ExpeditionController = options.controller ?? { id: 'baseline', decide: input => chooseBaselineAction(input).id };
+  let decisions: Decision[] = [];
+  const decisionListeners = new Set<() => void>();
+  let inFlight: { decision: Decision; expedition: number } | null = null;
   const startingConditions = {
-    scenario, objective, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
+    scenario, objective, instructions, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
     travelTimeMs: { plain: travelTimeMs('plain'), rough: travelTimeMs('rough') },
     rechargePerSecond: RECHARGE_PER_SECOND, batteryCapacity: 100, initialBattery: 100, movementEnergy: { plain: movementEnergy('plain'), rough: movementEnergy('rough') },
-    waitMs: WAIT_MS, inspectMs: INSPECT_MS, collectMs: COLLECT_MS, cargoCapacity: 2, controller: 'baseline' as const,
+    waitMs: WAIT_MS, inspectMs: INSPECT_MS, collectMs: COLLECT_MS, cargoCapacity: 2, controller: controller.id,
   };
   const events: ExpeditionEvent[] = [];
   let expedition = 1;
@@ -33,6 +38,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
 
   function initialState(): ExpeditionSnapshot {
     return {
+      instructions, instructionsVersion: 0, decisionRevision: 0, reconsiderationReason: null, decisionPending: inFlight !== null,
       battery: 100, batteryCapacity: 100, energyUsed: 0,
       objective, rubric: structuredClone(scienceRubric), cargo: [], cargoCapacity: 2,
       deliveredSamples: [], scienceScore: 0, discoveryCount: 0, inspectionCount: 0,
@@ -48,7 +54,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     events.push({ ...structuredClone(detail), sequence: events.length, expedition, atMs: state.elapsedMs });
   }
 
-  function selectAction() {
+  function availableCandidates(): ActionCandidate[] {
     const candidates = [
       ...explorationCandidates(state.memory, state.rover.position, state.area),
       ...scienceCandidates(state.memory, state.rover.position, state.cargo, state.cargoCapacity),
@@ -57,21 +63,101 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       candidates.push({ kind: 'recharge', durationMs: Math.ceil((state.batteryCapacity - state.battery) / RECHARGE_PER_SECOND * 1_000 / STEP_MS) * STEP_MS });
     }
     candidates.push({ kind: 'wait', durationMs: WAIT_MS });
+    return candidates.map(action => ({ ...action, id: `${action.kind}:${'target' in action ? action.target.id : action.durationMs}` }));
+  }
+
+  function selectAction() {
+    if (inFlight || state.status !== 'running' || state.currentAction) return;
     const input: ControllerInput = structuredClone({
+      instructions: state.instructions, instructionsVersion: state.instructionsVersion,
       battery: state.battery, batteryCapacity: state.batteryCapacity,
+      energyUsed: state.energyUsed, remainingMs: state.remainingMs,
       atMs: state.elapsedMs, position: state.rover.position, sensorRange: state.sensorRange,
       objective: state.objective, cargo: state.cargo, cargoCapacity: state.cargoCapacity,
-      observations: state.observations, memory: state.memory, candidates, previousAction,
+      observations: state.observations, memory: state.memory, candidates: availableCandidates(), previousAction,
     });
-    const action = chooseBaselineAction(input);
-    record({ type: 'decision-made', input, action, controller: 'baseline' });
+    const decision: Decision = { reason: state.reconsiderationReason ?? 'action-completed', id: decisions.length + 1, input, controller: controller.id, status: 'pending' };
+    state.reconsiderationReason = null;
+    decisions.push(decision);
+    state.decisionRevision++;
+    inFlight = { decision, expedition };
+    state.decisionPending = true;
+    record({ type: 'decision-requested', decision });
+    const requestedAt = performance.now();
+    try {
+      const result = controller.decide(structuredClone(input));
+      if (typeof result === 'string') applyDecision(result, 0);
+      else {
+        // Discard the remainder of a scheduler batch at the asynchronous boundary.
+        // It must never be replayed as catch-up after a pending decision.
+        pendingMs %= STEP_MS;
+        const settle = (id: string | null) => {
+          applyDecision(id, performance.now() - requestedAt);
+          // Let the wall-time scheduler reset its anchor at the exact end of the freeze.
+          for (const listener of decisionListeners) listener();
+        };
+        result.then(settle, () => settle(null));
+      }
+    } catch {
+      applyDecision(null, 0);
+    }
+  }
+
+  function applyDecision(candidateId: string | null, latencyMs: number) {
+    const request = inFlight!;
+    const decision = request.decision;
+    inFlight = null;
+    state.decisionPending = false;
+    if (request.expedition !== expedition || decision.input.instructionsVersion !== state.instructionsVersion
+      || state.status === 'ended' || state.status === 'ready' || decision.status === 'discarded') {
+      selectAction();
+      return;
+    }
+    // Only the simulator's complete candidate is executable; never trust controller-owned objects.
+    const offered = decision.input.candidates.find(candidate => candidate.id === candidateId);
+    const action = availableCandidates().find(candidate => candidate.id === candidateId);
+    if (!offered || !action || JSON.stringify(offered) !== JSON.stringify(action)) {
+      state.decisionRevision++;
+      decision.status = 'invalid';
+      decision.latencyMs = latencyMs;
+      state.status = 'paused';
+      record({ type: 'decision-invalid', decisionId: decision.id });
+      return;
+    }
+    state.decisionRevision++;
+    decision.status = 'applied';
+    decision.selectedCandidateId = action.id;
+    decision.action = action;
+    decision.latencyMs = latencyMs;
+    record({ type: 'decision-made', input: decision.input, action, controller: controller.id,
+      decisionId: decision.id, selectedCandidateId: action.id, latencyMs });
     state.currentAction = action;
     actionProgressMs = 0;
+    route = [];
     if ('target' in action) {
       route = findRoute(knownTerrain(state.memory), state.rover.position, action.target.position)!;
       waypointStart = { ...state.rover.position };
     }
-    record({ type: 'action-started', action, controller: 'baseline' });
+    record({ type: 'action-started', action, controller: controller.id });
+  }
+
+  function invalidateDecision() {
+    if (inFlight && inFlight.decision.status === 'pending') {
+      state.decisionRevision++;
+      inFlight.decision.status = 'discarded';
+      record({ type: 'decision-discarded', decisionId: inFlight.decision.id });
+    }
+  }
+
+  function reconsiderAtWaypoint() {
+    if (!state.reconsiderationReason || !state.currentAction) return;
+    // Inspection, collection, and bounded waiting finish first. Travel and recharge
+    // can be interrupted while stationary, but never part-way through a grid edge.
+    if (state.currentAction.kind !== 'recharge' && !('target' in state.currentAction && actionProgressMs === 0)) return;
+    record({ type: 'action-cancelled', action: state.currentAction, controller: controller.id });
+    state.currentAction = null;
+    route = [];
+    selectAction();
   }
 
   function sense() {
@@ -87,7 +173,10 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     state.memory = [...memory.values()];
     state.discoveryCount = state.memory.filter(item => item.kind === 'sample').length;
     state.inspectionCount = state.memory.filter(item => item.kind === 'sample' && item.properties).length;
-    if (discoveries.length) record({ type: 'discovered', observations: discoveries });
+    if (discoveries.length) {
+      record({ type: 'discovered', observations: discoveries });
+      if (state.currentAction && !state.reconsiderationReason) state.reconsiderationReason = 'new-observations';
+    }
   }
 
   function completeInteraction(action: Extract<Action, { target: unknown }>): boolean {
@@ -132,7 +221,9 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
   }
 
   function finish(condition: EndingCondition) {
-    if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: 'baseline' });
+    invalidateDecision();
+    state.reconsiderationReason = null;
+    if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: controller.id });
     state.currentAction = null;
     state.status = 'ended';
     state.endingCondition = condition;
@@ -185,18 +276,19 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       const interactionMs = action.kind === 'inspect' ? INSPECT_MS : action.kind === 'collect' ? COLLECT_MS : 0;
       completed = route.length === 0 && actionProgressMs >= interactionMs;
       if (completed && !completeInteraction(action)) {
-        record({ type: 'action-cancelled', action, controller: 'baseline' });
+        record({ type: 'action-cancelled', action, controller: controller.id });
         state.currentAction = null;
       }
     }
     sense();
     if (completed) {
-      if (state.currentAction) record({ type: 'action-completed', action, controller: 'baseline' });
+      if (state.currentAction) record({ type: 'action-completed', action, controller: controller.id });
       previousAction = action;
       state.currentAction = null;
     }
     if (state.remainingMs === 0) finish('timeout');
     else if (completed) selectAction();
+    else reconsiderAtWaypoint();
   }
 
   record({ type: 'created' });
@@ -204,15 +296,30 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
 
   return {
     getSnapshot: () => structuredClone(state),
+    getDecisions: () => structuredClone(decisions),
+    onDecisionSettled(listener: () => void) {
+      decisionListeners.add(listener);
+      return () => { decisionListeners.delete(listener); };
+    },
     getRecord: () => structuredClone({ startingConditions, events }),
     dispatch(command: ExpeditionCommand) {
-      if (command.type === 'set-objective' && state.status === 'ready' && command.objective !== state.objective) {
+      if (command.type === 'set-instructions' && state.status !== 'ended' && command.instructions !== instructions) {
+        instructions = command.instructions;
+        state.instructions = instructions;
+        state.instructionsVersion++;
+        invalidateDecision();
+        state.reconsiderationReason = 'instructions-changed';
+        record({ type: 'instructions-changed', instructions, version: state.instructionsVersion });
+        reconsiderAtWaypoint();
+        selectAction();
+      } else if (command.type === 'set-objective' && state.status === 'ready' && command.objective !== state.objective) {
         objective = command.objective;
         state.objective = objective;
         record({ type: 'objective-selected', objective, rubric: state.rubric });
       } else if (command.type === 'start' && state.status === 'ready') {
         state.status = 'running';
         record({ type: 'started' });
+        state.reconsiderationReason = 'start';
         selectAction();
       } else if (command.type === 'pause' && state.status === 'running') {
         state.status = 'paused';
@@ -220,30 +327,33 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       } else if (command.type === 'resume' && state.status === 'paused') {
         state.status = 'running';
         record({ type: 'resumed' });
+        selectAction();
       } else if (command.type === 'stop' && (state.status === 'running' || state.status === 'paused')) {
         finish('manual-stop');
       } else if (command.type === 'set-speed' && state.status !== 'ended' && state.speed !== command.speed) {
         state.speed = command.speed;
         record({ type: 'speed-changed', speed: command.speed });
       } else if (command.type === 'reset') {
-        if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: 'baseline' });
+        invalidateDecision();
+        if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: controller.id });
         expedition++;
+        decisions = [];
         state = initialState();
         pendingMs = 0;
         previousAction = null;
         route = [];
         actionProgressMs = 0;
         waypointStart = { ...scenario.base };
-        record({ type: 'reset' });
+        record({ type: 'reset', instructions });
         sense();
       }
     },
     // Wall time is supplied by a scheduler, never by rendering or camera frames.
     advanceWallTime(deltaMs: number) {
       if (!Number.isFinite(deltaMs) || deltaMs < 0) throw new RangeError('Wall time must be finite and non-negative.');
-      if (state.status !== 'running') return;
+      if (state.status !== 'running' || state.decisionPending) return;
       pendingMs += deltaMs * state.speed;
-      while (pendingMs + 1e-7 >= STEP_MS && state.status === 'running') {
+      while (pendingMs + 1e-7 >= STEP_MS && state.status === 'running' && !state.decisionPending) {
         pendingMs -= STEP_MS;
         tick();
       }

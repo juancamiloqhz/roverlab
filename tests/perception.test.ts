@@ -35,11 +35,12 @@ test('a controller receives only sensed terrain, objects, and routes through the
   });
   if (decision?.type !== 'decision-made') throw new Error('Missing controller input');
   expect(decision.input).toEqual({
+    instructions: '', instructionsVersion: 0, remainingMs: 300_000, energyUsed: 0,
     battery: 100, batteryCapacity: 100,
     atMs: 0, position: { x: 0, z: 0 }, sensorRange: 1,
     objective: 'past-water', cargo: [], cargoCapacity: 2,
     observations, memory: observations, previousAction: null,
-    candidates: [explore, inspect, { ...inspect, kind: 'collect' }, { kind: 'wait', durationMs: 5_000 }],
+    candidates: [{ ...explore, id: 'explore:frontier:1,0' }, { ...inspect, id: 'inspect:visible' }, { ...inspect, kind: 'collect', id: 'collect:visible' }, { kind: 'wait', durationMs: 5_000, id: 'wait:5000' }],
   });
   expect(expedition.getSnapshot().observations).toEqual(observations);
 });

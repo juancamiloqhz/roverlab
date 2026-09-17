@@ -87,7 +87,7 @@ test('mission control selects objectives, sees inspection and cargo, and scores 
     await objective.selectOption(value!);
     await page.getByRole('button', { name: 'Start expedition' }).click();
     await expect(objective).toBeDisabled();
-    await page.clock.fastForward(22_000);
+    await page.clock.fastForward(17_000);
     await expect(page.getByLabel('Current action')).toContainText('Inspect · Sample A');
     await expect(page.getByText('Properties unknown · Inspection required')).toBeVisible();
     await expect(page.getByLabel('Samples inspected')).toHaveText('0');
@@ -121,7 +121,7 @@ test('mission control sees energy use, separate recharging, and paused resource 
   await expect(page.getByLabel('Battery charge', { exact: true })).toHaveText('100.0 / 100');
   await expect(page.getByLabel('Energy used', { exact: true })).toHaveText('0.0 units');
   await page.getByRole('button', { name: 'Start expedition' }).click();
-  await page.clock.fastForward(47_500);
+  await page.clock.fastForward(42_500);
   await expect(page.getByLabel('Current action')).toHaveText('Recharge at base');
   await expect(page.getByLabel('Samples delivered')).toHaveText('1');
   await expect(page.getByLabel('Science score', { exact: true })).toHaveText('10');
@@ -145,4 +145,84 @@ test('mission control sees energy use, separate recharging, and paused resource 
   await page.getByRole('button', { name: 'Reset expedition' }).click();
   await expect(page.getByLabel('Battery charge', { exact: true })).toHaveText('100.0 / 100');
   await expect(page.getByLabel('Energy used', { exact: true })).toHaveText('0.0 units');
+});
+
+test('mission control edits instructions and inspects the baseline decision timeline', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  const instructions = page.getByRole('textbox', { name: 'Mission instructions' });
+  await instructions.fill('Prioritize evidence of past water.');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await timeline.getByText(/Decision 1 ·/).click();
+  await expect(timeline).toContainText('Prioritize evidence of past water.');
+  await expect(timeline).toContainText('Baseline controller');
+  await expect(timeline).toContainText('No model probabilities or reasoning');
+  await expect(timeline.getByRole('table', { name: 'Available actions' })).toContainText('Frontier 6 / 13');
+  await expect(timeline.getByRole('table', { name: 'Observations used' })).toContainText('0.0 s');
+  await expect(timeline.getByRole('table', { name: 'Rover memory used' })).toContainText('Base');
+  await page.clock.runFor(1_000);
+  await page.getByRole('button', { name: 'Pause expedition' }).click();
+  await instructions.fill('Preserve energy for the return.');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await expect(page.getByRole('combobox', { name: 'Scientific objective' })).toBeDisabled();
+  await expect(page.getByLabel('Instruction status')).toContainText('next safe waypoint');
+  await page.getByRole('button', { name: 'Resume expedition' }).click();
+  await page.clock.runFor(3_000);
+  await page.getByRole('button', { name: 'Pause expedition' }).click();
+  await timeline.getByText(/Decision 2 ·/).click();
+  await expect(timeline.getByLabel('Decision 2 details')).toContainText('Preserve energy for the return.');
+  await expect(timeline.getByLabel('Decision 1 details')).toContainText('Prioritize evidence of past water.');
+  await expect(timeline.getByLabel('Decision 2 details')).toContainText('Instructions changed');
+  await page.screenshot({ path: 'test-results/decisions.png', fullPage: true });
+  await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await expect(timeline).toContainText('Decisions will appear');
+  await expect(instructions).toHaveValue('Preserve energy for the return.');
+});
+
+test('a pending scripted decision freezes time while camera and mission controls stay responsive', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z'));
+  // Substitute the controller only in this browser verification. The real UI and
+  // expedition coordinator still own the timer, controls, and decision lifecycle.
+  await page.route('**/src/main.tsx', route => route.fulfill({ contentType: 'text/javascript', body: `
+    import React from '/node_modules/.vite/deps/react.js';
+    import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
+    import { App } from '/src/ui/App.tsx';
+    import { createExpedition } from '/src/simulation/expedition.ts';
+    const createSession = () => createExpedition({ controller: { id: 'scripted', decide: input =>
+      new Promise(resolve => setTimeout(() => resolve(input.candidates.find(action => action.kind === 'wait').id), 5000))
+    } });
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App, { createSession }));
+  ` }));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await expect(page.getByLabel('Current action')).toHaveText('Awaiting decision');
+  const scene = page.getByRole('region', { name: 'Planetary scene' });
+  const beforeOrbit = await scene.screenshot();
+  const box = (await scene.locator('canvas').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 160, box.y + box.height / 2 + 60, { steps: 8 });
+  await page.mouse.up();
+  await page.clock.runFor(300);
+  expect(await scene.screenshot()).not.toEqual(beforeOrbit);
+  await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Preserve energy.');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await page.getByRole('button', { name: '2×', exact: true }).click();
+  await page.clock.runFor(6_000);
+  await expect(page.getByLabel('Current action')).toHaveText('Awaiting decision');
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('05:00');
+  await expect(page.getByLabel('Battery charge', { exact: true })).toHaveText('100.0 / 100');
+  await expect(page.getByLabel('Rover coordinates')).toHaveText('3.00 / 13.00');
+  await page.getByRole('button', { name: 'Pause expedition' }).click();
+  await page.clock.runFor(5_000);
+  await expect(page.getByLabel('Current action')).toContainText('Wait');
+  await expect(page.getByRole('button', { name: 'Resume expedition' })).toBeVisible();
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('05:00');
+  await page.getByRole('button', { name: 'Resume expedition' }).click();
+  await page.clock.runFor(500);
+  await page.getByRole('button', { name: 'Pause expedition' }).click();
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('04:59');
 });

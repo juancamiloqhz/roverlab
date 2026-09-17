@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { createExpedition } from '../src/simulation/expedition';
 
-test('a baseline expedition explores, waits, and ends after five simulated minutes', () => {
+test('a baseline expedition reconsiders discoveries, delivers science, and ends after five simulated minutes', () => {
   const expedition = createExpedition();
   const initial = expedition.getSnapshot();
   expect(initial.status).toBe('ready');
@@ -9,7 +9,7 @@ test('a baseline expedition explores, waits, and ends after five simulated minut
   expedition.dispatch({ type: 'start' });
   expedition.advanceWallTime(4_000);
   expect(expedition.getSnapshot().rover.position).not.toEqual(initial.rover.position);
-  expect(expedition.getSnapshot().currentAction?.kind).toBe('explore');
+  expect(expedition.getSnapshot().currentAction?.kind).toBe('inspect');
   const obstacles = expedition.getRecord().startingConditions.scenario.obstacles;
   const collisions = [];
   for (let step = 0; step < 2_960; step++) {
@@ -25,12 +25,12 @@ test('a baseline expedition explores, waits, and ends after five simulated minut
   });
   const record = expedition.getRecord();
   expect(record.startingConditions.scenario.base).toEqual(initial.rover.position);
-  expect(record.events.slice(0, 5).map(event => event.type)).toEqual(['created', 'discovered', 'started', 'decision-made', 'action-started']);
+  expect(record.events.slice(0, 6).map(event => event.type)).toEqual(['created', 'discovered', 'started', 'decision-requested', 'decision-made', 'action-started']);
   expect(record.events.at(-1)).toMatchObject({ type: 'ended', atMs: 300_000, condition: 'timeout' });
   expect(record.events.every((event, index) => event.sequence === index && (index === 0 || event.atMs >= record.events[index - 1]!.atMs))).toBe(true);
   expect(new Set(record.events.flatMap(event => event.type === 'action-started' ? [event.action.kind] : [])))
-    .toEqual(new Set(['explore', 'wait', 'inspect', 'collect', 'return-to-base', 'recharge']));
-  expect(record.events.some(event => event.type === 'action-completed' && event.action.kind === 'explore')).toBe(true);
+    .toEqual(new Set(['explore', 'inspect', 'collect', 'return-to-base', 'recharge']));
+  expect(record.events.some(event => event.type === 'action-cancelled' && event.action.kind === 'explore')).toBe(true);
   expect(expedition.getSnapshot().discoveryCount).toBeGreaterThan(0);
   expect(expedition.getSnapshot().deliveredSamples).toHaveLength(1);
   expect(expedition.getSnapshot().memory.filter(item => item.kind === 'terrain').length).toBeGreaterThan(200);
@@ -75,10 +75,10 @@ test('identical commands at expedition times produce identical outcomes at every
     expedition.advanceWallTime(12_000 / speed);
     expect(expedition.getSnapshot().elapsedMs).toBe(12_000);
     expect(expedition.getSnapshot().rover.position).toEqual({ x: 6, z: 13 });
-    expect(expedition.getSnapshot().currentAction?.kind).toBe('wait');
-    const waiting = expedition.getSnapshot().rover;
+    expect(expedition.getSnapshot().currentAction?.kind).toBe('inspect');
+    const traveling = expedition.getSnapshot().rover;
     expedition.advanceWallTime(2_000 / speed);
-    expect(expedition.getSnapshot().rover).toEqual(waiting);
+    expect(expedition.getSnapshot().rover).not.toEqual(traveling);
     expedition.dispatch({ type: 'pause' });
     expedition.advanceWallTime(500_000);
     expedition.dispatch({ type: 'resume' });

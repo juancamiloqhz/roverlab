@@ -1,6 +1,9 @@
+import type { ExpeditionSession } from '../simulation/expedition';
 import { ExpeditionScene } from '../scene/ExpeditionScene';
 import { scientificObjectives } from '../simulation/science';
 import type { Action, ExpeditionSnapshot, ScientificObjective } from '../simulation/types';
+import { DecisionTimeline } from './DecisionTimeline';
+import { MissionInstructions } from './MissionInstructions';
 import { useExpedition } from './useExpedition';
 import './styles.css';
 
@@ -35,16 +38,18 @@ function describeAction(action: Action | null, status: ExpeditionSnapshot['statu
   }
 }
 
-export function App() {
-  const { snapshot, dispatch } = useExpedition();
+export function App({ createSession }: { createSession?: () => ExpeditionSession } = {}) {
+  const { snapshot, decisions, dispatch } = useExpedition(createSession);
   const { status, currentAction, rover } = snapshot;
   const knownCells = snapshot.memory.filter(item => item.kind === 'terrain').length;
   const samples = snapshot.memory.filter(item => item.kind === 'sample');
   const currentIds = new Set(snapshot.observations.map(item => item.id));
   const active = status === 'running' || status === 'paused';
   const endingLabel = snapshot.endingCondition && { timeout: 'Time budget reached', 'manual-stop': 'Stopped by mission control', stranded: 'Stranded rover' }[snapshot.endingCondition];
-  const statusLabel = { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
-  const { label: actionLabel, description: actionDescription } = describeAction(currentAction, status);
+  const statusLabel = snapshot.decisionPending && active ? 'Decision pending · Expedition time frozen' : { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
+  const { label: actionLabel, description: actionDescription } = snapshot.decisionPending && active
+    ? { label: 'Awaiting decision', description: 'Expedition time and resources are frozen. Camera and mission controls remain available.' }
+    : describeAction(currentAction, status);
 
   return (
     <div className="app-shell">
@@ -73,6 +78,7 @@ export function App() {
               <div className="speed-control" role="group" aria-label="Playback speed"><span>Playback</span>{([1, 2, 4] as const).map(speed => <button key={speed} aria-pressed={snapshot.speed === speed} disabled={status === 'ended'} onClick={() => dispatch({ type: 'set-speed', speed })}>{speed}×</button>)}</div>
             </section>
             <p className="world-note"><span aria-hidden="true">↳</span> You set the pace. The rover chooses its own targets and routes.</p>
+            <DecisionTimeline decisions={decisions} />
           </div>
           <aside className="telemetry" aria-label="Expedition telemetry">
             <div className="panel-title"><span>MISSION CONTROL</span><span className="connection-dot" /></div>
@@ -84,6 +90,7 @@ export function App() {
               </select>
               <p className="memory-note">{status === 'ready' ? 'Choose before starting.' : 'Objective locked. Reset to choose a new expedition.'} Delivered samples earn {snapshot.rubric.unrelated} for unrelated, {snapshot.rubric.suggestive} for suggestive, or {snapshot.rubric['strong-evidence']} for strong evidence.</p>
             </section>
+            <MissionInstructions snapshot={snapshot} dispatch={dispatch} />
             <div className="time-block"><span className="field-label">TIME REMAINING</span><div className="timer" aria-label="Remaining expedition time">{formatTime(snapshot.remainingMs)}</div><div className="time-track"><div style={{ width: `${snapshot.remainingMs / snapshot.durationMs * 100}%` }} /></div><div className="time-caption"><span>Expedition time</span><span>{formatTime(snapshot.durationMs)} budget</span></div></div>
             <section className="energy-block" aria-label="Energy resources">
               <div className="telemetry-row"><span>Battery</span><strong aria-label="Battery charge">{snapshot.battery.toFixed(1)} / {snapshot.batteryCapacity}</strong></div>

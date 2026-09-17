@@ -104,3 +104,23 @@ footer { display: flex; justify-content: space-between; gap: 20px; border-top: 1
 
 .energy-block { margin: 18px 0; }
 .energy-block meter { display: block; width: 100%; height: 10px; margin: 6px 0 12px; accent-color: #b6d5a4; }
+
+.instructions-block { grid-column: 1 / -1; margin-bottom: 24px; }
+.instructions-block textarea { display: block; resize: vertical; width: 100%; min-height: 84px; margin: 10px 0; padding: 10px; background: #23332e; color: #e8eee9; border: 1px solid #4b6151; border-radius: 5px; font: inherit; font-size: 12px; line-height: 1.5; }
+.instructions-block textarea:focus-visible, .decision-timeline summary:focus-visible { outline: 2px solid #b8efc6; outline-offset: 3px; }
+.decision-timeline { margin-top: 26px; padding: 20px; border: 1px solid #35413e; border-radius: 9px; background: #172325; }
+.decision-timeline h3 { font-size: 16px; font-weight: 500; margin: 0; }
+.decision-timeline h3 span { font-size: 12px; color: #aec4af; margin-left: 8px; }
+.decision-timeline ol { list-style: none; padding: 0; margin: 18px 0 0; max-height: 640px; overflow-y: auto; }
+.decision-timeline li { border-top: 1px solid #334039; }
+.decision-timeline summary { cursor: pointer; font-size: 12px; line-height: 1.6; padding: 14px 4px; }
+.decision-timeline summary span { color: #aec4af; margin-left: 10px; overflow-wrap: anywhere; }
+.decision-details { padding: 0 4px 16px; font-size: 12px; line-height: 1.7; color: #b7c8bb; }
+.decision-details p { margin: 8px 0; }
+.decision-details blockquote { margin: 10px 0; padding: 10px 14px; border-left: 2px solid #aec4af; background: #23332e; white-space: pre-wrap; overflow-wrap: anywhere; }
+.decision-table { overflow: auto; max-height: 280px; margin-top: 16px; }
+.decision-table table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.decision-table caption { text-align: left; font-weight: 600; color: #d5e7c9; padding: 6px; }
+.decision-table th, .decision-table td { padding: 7px; text-align: left; border-bottom: 1px solid #334039; vertical-align: top; }
+.decision-table th { background: #23332e; }
+.decision-table td:first-child { overflow-wrap: anywhere; }
