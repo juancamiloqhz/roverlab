@@ -26,3 +26,5 @@
 - Standards review against `04411bc`: no actionable findings. Bun tooling, domain vocabulary, local issue conventions, simulator-owned navigation/accounting, snapshot rendering, and the decision-time freeze are preserved. Shared route and movement-cost helpers avoid duplicated behavior; no material baseline smell was identified.
 - Spec review against `04411bc`: no actionable findings. No missing requirements, material scope creep, or incorrect behavior was identified within ticket 08. Hidden-state boundaries, safe reconsideration, movement/detour costs, frozen storm time, stale decisions, recording, and visual disclosure were reviewed separately from Standards.
 - Review totals: Standards 0 findings; Spec 0 findings. No outstanding review issues.
+
+- User confirmed manual QA passed after the storm walkthrough and approved committing and pushing ticket 08.
