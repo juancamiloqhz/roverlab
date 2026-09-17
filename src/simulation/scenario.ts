@@ -1,7 +1,7 @@
 import type { Scenario } from './types';
 
 export const authoredScenario: Scenario = {
-  id: 'ochre-basin-v4',
+  id: 'ochre-basin-v5',
   name: 'Ochre Basin',
   width: 21,
   depth: 19,
@@ -32,7 +32,7 @@ export const authoredScenario: Scenario = {
       classifications: { 'past-water': 'unrelated', 'unusual-minerals': 'strong-evidence' },
     },
     {
-      id: 'c', label: 'Sample C', position: { x: 17, z: 4 },
+      id: 'c', label: 'Sample C', position: { x: 17, z: 5 },
       properties: ['Veined rock', 'Possible fluid alteration and uncommon mineral traces'],
       classifications: { 'past-water': 'suggestive', 'unusual-minerals': 'suggestive' },
     },

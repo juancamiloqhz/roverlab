@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ExpeditionResults } from './ExpeditionResults';
+import { ExpeditionComparison } from './ExpeditionComparison';
 import { SavedExpeditions, SavedExpeditionView } from './SavedExpeditions';
 import { formatTime } from './formatTime';
 import type { ExpeditionSession } from '../simulation/expedition';
@@ -43,7 +44,9 @@ function describeAction(action: Action | null, status: ExpeditionSnapshot['statu
 export function App({ createSession }: { createSession?: () => ExpeditionSession } = {}) {
   const { snapshot, decisions, completedRecords, pauseForInspection, dispatch, getFullWorldView } = useExpedition(createSession);
   const [selectedRecord, setSelectedRecord] = useState<ExpeditionRecord | null>(null);
-  const openRecord = (record: ExpeditionRecord) => { pauseForInspection(); setSelectedRecord(record); window.scrollTo({ top: 0, behavior: 'instant' }); };
+  const [comparison, setComparison] = useState<[ExpeditionRecord, ExpeditionRecord] | null>(null);
+  const openRecord = (record: ExpeditionRecord) => { pauseForInspection(); setComparison(null); setSelectedRecord(record); window.scrollTo({ top: 0, behavior: 'instant' }); };
+  const compareRecords = (records: [ExpeditionRecord, ExpeditionRecord]) => { pauseForInspection(); setSelectedRecord(null); setComparison(records); window.scrollTo({ top: 0, behavior: 'instant' }); };
   const { status, currentAction, rover } = snapshot;
   const controllerLabel = controllerLabels[snapshot.controller];
   const knownCells = snapshot.memory.filter(item => item.kind === 'terrain').length;
@@ -59,10 +62,11 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
     <div className="app-shell">
       <header className="app-header">
         <div className="brand"><span className="brand-mark" aria-hidden="true">↗</span><h1>RoverLab</h1><span className="brand-divider" /><span className="brand-subtitle">Planetary exploration sandbox</span></div>
-        <a className="records-link" href="#saved-expeditions">Saved expeditions</a><span className="local-tag"><i /> {selectedRecord ? 'Saved expedition' : 'Local expedition'}</span>
+        <a className="records-link" href="#saved-expeditions">Saved expeditions</a><span className="local-tag"><i /> {comparison ? 'Expedition comparison' : selectedRecord ? 'Saved expedition' : 'Local expedition'}</span>
       </header>
       <main>
-        {selectedRecord ? <SavedExpeditionView key={selectedRecord.id} record={selectedRecord} onClose={() => setSelectedRecord(null)} /> : <>
+        {comparison ? <ExpeditionComparison records={comparison} onClose={() => setComparison(null)} onOpen={openRecord} />
+          : selectedRecord ? <SavedExpeditionView key={selectedRecord.id} record={selectedRecord} onClose={() => setSelectedRecord(null)} /> : <>
         <div className="page-heading">
           <div><p className="eyebrow">{snapshot.controllerHistory.map(entry => entry.controller.toUpperCase()).join(' → ')} EXPEDITION</p><h2>{snapshot.area.name}<span className="title-dot">.</span></h2><p className="page-description">An unknown world. An autonomous rover. Discover it together.</p></div>
           <div className="scenario-info"><span>AUTHORED SCENARIO</span><strong>{snapshot.area.width} × {snapshot.area.depth} <span>grid</span></strong><small>{snapshot.durationMs / 60_000}-minute expedition</small></div>
@@ -154,8 +158,8 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
           </aside>
         </div>
         </>}
-        <SavedExpeditions completedRecords={completedRecords} onOpen={openRecord} />
-        <footer><span>ROVERLAB <span className="footer-separator">/</span> AUTONOMOUS EXPLORATION</span><span>{selectedRecord ? selectedRecord.results.controllerHistory.map(entry => controllerLabels[entry.controller]).join(' → ') : controllerLabel} · {selectedRecord?.results.area.id ?? snapshot.area.id}</span></footer>
+        <SavedExpeditions completedRecords={completedRecords} onOpen={openRecord} onCompare={compareRecords} />
+        <footer><span>ROVERLAB <span className="footer-separator">/</span> AUTONOMOUS EXPLORATION</span><span>{comparison ? 'Saved expedition comparison' : <>{selectedRecord ? selectedRecord.results.controllerHistory.map(entry => controllerLabels[entry.controller]).join(' → ') : controllerLabel} · {selectedRecord?.results.area.id ?? snapshot.area.id}</>}</span></footer>
       </main>
     </div>
   );

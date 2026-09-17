@@ -14,14 +14,16 @@ const mergeRecords = (existing: ExpeditionRecord[], added: ExpeditionRecord[]) =
   [...new Map([...existing, ...added].map(record => [record.id, record])).values()]
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt));
 
-export function SavedExpeditions({ completedRecords, onOpen }: {
+export function SavedExpeditions({ completedRecords, onOpen, onCompare }: {
   completedRecords: ExpeditionRecord[]; onOpen: (record: ExpeditionRecord) => void;
+  onCompare: (records: [ExpeditionRecord, ExpeditionRecord]) => void;
 }) {
   const [records, setRecords] = useState<ExpeditionRecord[]>([]);
   const [savedIds, setSavedIds] = useState(new Set<string>());
   const [storageError, setStorageError] = useState('');
   const [importError, setImportError] = useState('');
   const [importing, setImporting] = useState(false);
+  const [comparisonIds, setComparisonIds] = useState<string[]>([]);
   const attempted = useRef(new Set<string>());
 
   useEffect(() => {
@@ -70,10 +72,23 @@ export function SavedExpeditions({ completedRecords, onOpen }: {
       </label>
     </div>
     <p className="memory-note">Completed expeditions save automatically in this browser. Open one to inspect its history; an active expedition will pause.</p>
+    <div className="record-toolbar comparison-selection">
+      <p>Select two expeditions to compare their conditions and results. Comparing pauses an active expedition.</p>
+      <button className="secondary" disabled={comparisonIds.length !== 2} onClick={() => {
+        const left = records.find(record => record.id === comparisonIds[0]);
+        const right = records.find(record => record.id === comparisonIds[1]);
+        if (left && right) onCompare([left, right]);
+      }}>Compare selected expeditions</button>
+      {comparisonIds.length > 0 && <button className="secondary" onClick={() => setComparisonIds([])}>Clear selection</button>}
+    </div>
     {storageError && <p role="alert">{storageError}</p>}
     {importError && <p role="alert">{importError}</p>}
     {records.length === 0 ? <p className="memory-note">No saved expeditions yet.</p> : <ul>
       {records.map(record => <li key={record.id}>
+        <input type="checkbox" aria-label={`Compare expedition ${record.id}`} checked={comparisonIds.includes(record.id)}
+          disabled={comparisonIds.length === 2 && !comparisonIds.includes(record.id)} onChange={event => {
+            setComparisonIds(ids => event.target.checked ? [...ids, record.id] : ids.filter(id => id !== record.id));
+          }} />
         <div><strong>{scientificObjectives[record.results.objective]} · {record.results.scienceScore} science points</strong>
           <small>{new Date(record.completedAt).toLocaleString()} · {record.results.controllerHistory.map(entry => controllerLabels[entry.controller]).join(' → ')}</small>
           <small>{savedIds.has(record.id) ? 'Saved in this browser' : 'Not saved yet · Open to export a copy'}</small>

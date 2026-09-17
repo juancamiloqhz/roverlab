@@ -136,6 +136,20 @@ test('TypeSafe-only and mixed-controller histories survive browser storage and i
     await expect(viewer.getByRole('region', { name: 'Expedition replay', exact: true }).getByRole('status')).toHaveText('Replay complete');
     await expect(viewer.getByRole('region', { name: 'Expedition results' })).toContainText(`Controllers used: ${controllers}`);
   }
+  await viewer.getByRole('checkbox', { name: `Compare expedition ${JSON.parse(typesafe).id}`, exact: true }).check();
+  await viewer.getByRole('checkbox', { name: `Compare expedition ${JSON.parse(mixed).id}`, exact: true }).check();
+  await viewer.getByRole('button', { name: 'Compare selected expeditions' }).click();
+  const comparison = viewer.getByRole('region', { name: 'Expedition comparison', exact: true });
+  await expect(comparison).toContainText('Mixed-controller expedition');
+  const inference = comparison.getByRole('table', { name: 'Inference metrics' });
+  await expect(inference.getByRole('row', { name: /Inference attempts/ })).toHaveText('Inference attempts13');
+  await expect(inference).toContainText(`${JSON.parse(mixed).results.inferenceLatencyMs.toFixed(0)} ms`);
+  await expect(comparison.getByRole('table', { name: 'Simulation results' })).not.toContainText('probabilities');
+  await expect(comparison.getByRole('status')).toContainText('Conditions differ');
+  await viewer.screenshot({ path: 'test-results/comparison-mixed.png', fullPage: true });
+  await comparison.getByRole('button', { name: 'Inspect expedition 1' }).click();
+  await viewer.getByText(/Decision 1 ·/).click();
+  await expect(viewer.getByRole('table', { name: 'Available actions' })).toContainText('Returned probability');
   expect(inferenceRequests).toBe(0);
   await context.close();
 });
