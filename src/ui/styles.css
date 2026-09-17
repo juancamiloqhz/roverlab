@@ -69,6 +69,12 @@ h2 { font-size: clamp(32px, 3vw, 44px); letter-spacing: -1.7px; font-weight: 500
 .controller-card strong { font-size: 12px; font-weight: 550; }
 .controller-card p { font-size: 10px; color: #91a397; margin: 5px 0 0; }
 .controller-tag { font-size: 7px; color: #b6c9ac; background: #2e3b2f; border: 1px solid #48573d; border-radius: 3px; padding: 3px 4px; margin-left: auto; }
+.objective-block, .science-block { grid-column: 1 / -1; }
+.objective-block { margin-bottom: 24px; }
+.objective-block select { width: 100%; margin-top: 10px; padding: 10px 7px; border: 1px solid #4b6151; border-radius: 5px; background: #23332e; color: #e8eee9; font: inherit; font-size: 11px; }
+.objective-block select:disabled { opacity: .75; }
+.objective-block select:focus-visible { outline: 2px solid #b8efc6; outline-offset: 3px; }
+.objective-block .memory-note { margin-top: 8px; }
 .timer { font-size: 58px; font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: -2.6px; line-height: 1.35; margin: 4px 0 13px; }
 .time-track { height: 3px; background: #354138; border-radius: 2px; overflow: hidden; }
 .time-track > div { height: 100%; background: #b2cb99; }

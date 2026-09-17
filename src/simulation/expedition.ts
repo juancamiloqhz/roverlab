@@ -1,18 +1,23 @@
 import { chooseBaselineAction } from '../controllers/baseline';
 import { findRoute, positionKey, travelTimeMs } from './navigation';
-import { explorationCandidates, knownTerrain, observe } from './perception';
+import { explorationCandidates, knownTerrain, observe, scienceCandidates } from './perception';
 import { authoredScenario } from './scenario';
-import type { Action, ControllerInput, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, Position, Scenario } from './types';
+import { scienceRubric } from './science';
+import type { Action, ControllerInput, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, Position, Scenario, ScientificObjective } from './types';
 
 const STEP_MS = 100;
 const DURATION_MS = 300_000;
 const WAIT_MS = 5_000;
+const INSPECT_MS = 6_000;
+const COLLECT_MS = 4_000;
 
-export function createExpedition(options: { scenario?: Scenario } = {}) {
+export function createExpedition(options: { scenario?: Scenario; objective?: ScientificObjective } = {}) {
   const scenario = structuredClone(options.scenario ?? authoredScenario);
+  let objective = options.objective ?? 'past-water';
   const startingConditions = {
-    scenario, durationMs: DURATION_MS, fixedStepMs: STEP_MS,
-    travelTimeMs: { plain: travelTimeMs('plain'), rough: travelTimeMs('rough') }, waitMs: WAIT_MS, controller: 'baseline' as const,
+    scenario, objective, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
+    travelTimeMs: { plain: travelTimeMs('plain'), rough: travelTimeMs('rough') },
+    waitMs: WAIT_MS, inspectMs: INSPECT_MS, collectMs: COLLECT_MS, cargoCapacity: 2, controller: 'baseline' as const,
   };
   const events: ExpeditionEvent[] = [];
   let expedition = 1;
@@ -25,6 +30,8 @@ export function createExpedition(options: { scenario?: Scenario } = {}) {
 
   function initialState(): ExpeditionSnapshot {
     return {
+      objective, rubric: structuredClone(scienceRubric), cargo: [], cargoCapacity: 2,
+      deliveredSamples: [], scienceScore: 0, discoveryCount: 0, inspectionCount: 0,
       status: 'ready', durationMs: DURATION_MS, elapsedMs: 0, remainingMs: DURATION_MS, speed: 1,
       rover: { position: { ...scenario.base }, heading: 0, distance: 0 },
       currentAction: null, endingCondition: null, exploredTargetIds: [],
@@ -39,16 +46,18 @@ export function createExpedition(options: { scenario?: Scenario } = {}) {
 
   function selectAction() {
     const candidates = explorationCandidates(state.memory, state.rover.position, state.area);
+    candidates.push(...scienceCandidates(state.memory, state.rover.position, state.cargo, state.cargoCapacity));
     candidates.push({ kind: 'wait', durationMs: WAIT_MS });
     const input: ControllerInput = structuredClone({
       atMs: state.elapsedMs, position: state.rover.position, sensorRange: state.sensorRange,
+      objective: state.objective, cargo: state.cargo, cargoCapacity: state.cargoCapacity,
       observations: state.observations, memory: state.memory, candidates, previousAction,
     });
     const action = chooseBaselineAction(input);
     record({ type: 'decision-made', input, action, controller: 'baseline' });
     state.currentAction = action;
     actionProgressMs = 0;
-    if (action.kind === 'explore') {
+    if (action.kind !== 'wait') {
       route = findRoute(knownTerrain(state.memory), state.rover.position, action.target.position)!;
       waypointStart = { ...state.rover.position };
     }
@@ -56,12 +65,60 @@ export function createExpedition(options: { scenario?: Scenario } = {}) {
   }
 
   function sense() {
-    state.observations = observe(scenario, state.rover.position, state.elapsedMs);
     const memory = new Map(state.memory.map(observation => [observation.id, observation]));
+    state.observations = observe(scenario, state.rover.position, state.elapsedMs).flatMap(observation => {
+      const remembered = memory.get(observation.id);
+      if (observation.kind !== 'sample' || remembered?.kind !== 'sample') return [observation];
+      if (remembered.status !== 'available') return [];
+      return [{ ...remembered, observedAtMs: observation.observedAtMs }];
+    });
     const discoveries = state.observations.filter(observation => !memory.has(observation.id));
     for (const observation of state.observations) memory.set(observation.id, observation);
     state.memory = [...memory.values()];
+    state.discoveryCount = state.memory.filter(item => item.kind === 'sample').length;
+    state.inspectionCount = state.memory.filter(item => item.kind === 'sample' && item.properties).length;
     if (discoveries.length) record({ type: 'discovered', observations: discoveries });
+  }
+
+  function completeInteraction(action: Exclude<Action, { kind: 'wait' }>): boolean {
+    if (positionKey(state.rover.position) !== positionKey(action.target.position)) return false;
+    if (action.kind === 'explore') {
+      state.exploredTargetIds.push(action.target.id);
+    } else if (action.kind === 'return-to-base') {
+      if (positionKey(state.rover.position) !== positionKey(scenario.base)) return false;
+      const samples = state.cargo.map(cargo => {
+        const sample = scenario.samples.find(sample => sample.id === cargo.sampleId)!;
+        const classification = sample.classifications[state.objective];
+        return { ...cargo, classification, score: state.rubric[classification], deliveredAtMs: state.elapsedMs };
+      });
+      for (const sample of samples) {
+        const memory = state.memory.find(item => item.kind === 'sample' && item.sampleId === sample.sampleId);
+        if (memory?.kind === 'sample') memory.status = 'delivered';
+      }
+      state.deliveredSamples.push(...samples);
+      state.scienceScore += samples.reduce((score, sample) => score + sample.score, 0);
+      state.cargo = [];
+      if (samples.length) record({ type: 'samples-delivered', samples, scienceScore: state.scienceScore });
+    } else {
+      const sample = scenario.samples.find(sample => sample.id === action.target.id);
+      const memory = state.memory.find(item => item.kind === 'sample' && item.sampleId === action.target.id);
+      if (!sample || memory?.kind !== 'sample' || memory.status !== 'available'
+        || positionKey(sample.position) !== positionKey(state.rover.position)) return false;
+      if (action.kind === 'inspect') {
+        if (memory.properties) return false;
+        memory.properties = [...sample.properties];
+        memory.inspectedAtMs = state.elapsedMs;
+        memory.observedAtMs = state.elapsedMs;
+        record({ type: 'sample-inspected', sample: memory });
+      } else {
+        if (state.cargo.length >= state.cargoCapacity) return false;
+        memory.status = 'cargo';
+        const cargo = { sampleId: sample.id, label: sample.label };
+        state.cargo.push(cargo);
+        record({ type: 'sample-collected', sample: cargo });
+      }
+    }
+    return true;
   }
 
   function finish(condition: EndingCondition) {
@@ -100,12 +157,16 @@ export function createExpedition(options: { scenario?: Scenario } = {}) {
           actionProgressMs = 0;
         }
       }
-      completed = route.length === 0;
-      if (completed) state.exploredTargetIds.push(action.target.id);
+      const interactionMs = action.kind === 'inspect' ? INSPECT_MS : action.kind === 'collect' ? COLLECT_MS : 0;
+      completed = route.length === 0 && actionProgressMs >= interactionMs;
+      if (completed && !completeInteraction(action)) {
+        record({ type: 'action-cancelled', action, controller: 'baseline' });
+        state.currentAction = null;
+      }
     }
     sense();
     if (completed) {
-      record({ type: 'action-completed', action, controller: 'baseline' });
+      if (state.currentAction) record({ type: 'action-completed', action, controller: 'baseline' });
       previousAction = action;
       state.currentAction = null;
     }
@@ -120,7 +181,11 @@ export function createExpedition(options: { scenario?: Scenario } = {}) {
     getSnapshot: () => structuredClone(state),
     getRecord: () => structuredClone({ startingConditions, events }),
     dispatch(command: ExpeditionCommand) {
-      if (command.type === 'start' && state.status === 'ready') {
+      if (command.type === 'set-objective' && state.status === 'ready' && command.objective !== state.objective) {
+        objective = command.objective;
+        state.objective = objective;
+        record({ type: 'objective-selected', objective, rubric: state.rubric });
+      } else if (command.type === 'start' && state.status === 'ready') {
         state.status = 'running';
         record({ type: 'started' });
         selectAction();

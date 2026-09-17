@@ -1,4 +1,9 @@
 export type Position = { x: number; z: number };
+export type ScientificObjective = 'past-water' | 'unusual-minerals';
+export type SampleClassification = 'unrelated' | 'suggestive' | 'strong-evidence';
+export type ScienceRubric = Record<SampleClassification, number>;
+export type CargoSample = { sampleId: string; label: string };
+export type DeliveredSample = CargoSample & { classification: SampleClassification; score: number; deliveredAtMs: number };
 export type ExplorationTarget = { id: string; label: string; position: Position };
 export type Scenario = {
   id: string;
@@ -9,18 +14,31 @@ export type Scenario = {
   sensorRange: number;
   obstacles: Position[];
   roughTerrain: Position[];
-  samples: { id: string; label: string; position: Position; properties: string[] }[];
+  samples: {
+    id: string; label: string; position: Position; properties: string[];
+    classifications: Record<ScientificObjective, SampleClassification>;
+  }[];
 };
 export type Terrain = 'plain' | 'rough';
 type Observed = { id: string; position: Position; observedAtMs: number };
 export type TerrainObservation = Observed & { kind: 'terrain'; terrain: Terrain; blocked: boolean };
+export type SampleObservation = Observed & {
+  kind: 'sample'; sampleId: string; label: string; status: 'available' | 'cargo' | 'delivered';
+  properties?: string[]; inspectedAtMs?: number;
+};
 export type Observation = TerrainObservation
   | (Observed & { kind: 'base' })
-  | (Observed & { kind: 'sample'; sampleId: string; label: string });
+  | SampleObservation;
+type TargetedAction<Kind> = {
+  kind: Kind; target: ExplorationTarget; routeEstimate: { distanceCells: number; durationMs: number };
+};
 export type Action =
-  | { kind: 'explore'; target: ExplorationTarget; routeEstimate: { distanceCells: number; durationMs: number } }
+  | TargetedAction<'explore'> | TargetedAction<'inspect'> | TargetedAction<'collect'> | TargetedAction<'return-to-base'>
   | { kind: 'wait'; durationMs: number };
 export type ControllerInput = {
+  objective: ScientificObjective;
+  cargo: CargoSample[];
+  cargoCapacity: number;
   atMs: number;
   position: Position;
   sensorRange: number;
@@ -33,8 +51,17 @@ export type PlaybackSpeed = 1 | 2 | 4;
 export type EndingCondition = 'timeout' | 'manual-stop';
 export type ExpeditionCommand =
   | { type: 'start' | 'pause' | 'resume' | 'reset' | 'stop' }
+  | { type: 'set-objective'; objective: ScientificObjective }
   | { type: 'set-speed'; speed: PlaybackSpeed };
 export type ExpeditionSnapshot = {
+  objective: ScientificObjective;
+  rubric: ScienceRubric;
+  cargo: CargoSample[];
+  cargoCapacity: number;
+  deliveredSamples: DeliveredSample[];
+  scienceScore: number;
+  discoveryCount: number;
+  inspectionCount: number;
   status: 'ready' | 'running' | 'paused' | 'ended';
   durationMs: number;
   elapsedMs: number;
@@ -51,6 +78,10 @@ export type ExpeditionSnapshot = {
 };
 export type EventDetail =
   | { type: 'created' | 'started' | 'paused' | 'resumed' | 'reset' }
+  | { type: 'objective-selected'; objective: ScientificObjective; rubric: ScienceRubric }
+  | { type: 'sample-inspected'; sample: SampleObservation }
+  | { type: 'sample-collected'; sample: CargoSample }
+  | { type: 'samples-delivered'; samples: DeliveredSample[]; scienceScore: number }
   | { type: 'speed-changed'; speed: PlaybackSpeed }
   | { type: 'discovered'; observations: Observation[] }
   | { type: 'decision-made'; input: ControllerInput; action: Action; controller: 'baseline' }

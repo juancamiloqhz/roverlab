@@ -69,11 +69,48 @@ test('the scene reveals discoveries, distinguishes memory, and hides them again 
   await page.getByRole('button', { name: 'Resume expedition' }).click();
   await page.clock.fastForward(90_000);
   await page.getByRole('button', { name: 'Pause expedition' }).click();
-  await expect(scene.getByText('Sample A · Remembered', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Sample A observation')).toContainText('Remembered · Last seen 00:42.9');
+  await expect(scene.getByText(/Sample A/)).toHaveCount(0);
+  await expect(page.getByLabel('Sample A observation')).toContainText('Delivered');
+  await expect(scene.getByText('Base · 01 · Remembered', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/perception-memory.png', fullPage: true });
   await page.getByRole('button', { name: 'Reset expedition' }).click();
   await expect(page.getByLabel('Terrain discovered')).toHaveText('29 / 399 cells');
   await expect(page.getByLabel('Samples discovered')).toHaveText('0');
   await expect(scene.getByText(/Sample [ABC]/)).toHaveCount(0);
+});
+
+test('mission control selects objectives, sees inspection and cargo, and scores delivery', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  const objective = page.getByRole('combobox', { name: 'Scientific objective' });
+  for (const [value, points] of [['past-water', '10'], ['unusual-minerals', '0']]) {
+    await objective.selectOption(value!);
+    await page.getByRole('button', { name: 'Start expedition' }).click();
+    await expect(objective).toBeDisabled();
+    await page.clock.fastForward(22_000);
+    await expect(page.getByLabel('Current action')).toContainText('Inspect · Sample A');
+    await expect(page.getByText('Properties unknown · Inspection required')).toBeVisible();
+    await expect(page.getByLabel('Samples inspected')).toHaveText('0');
+    await page.clock.fastForward(6_000);
+    await expect(page.getByText(/Layered sediment/)).toBeVisible();
+    await expect(page.getByLabel('Samples inspected')).toHaveText('1');
+    await expect(page.getByLabel('Current action')).toContainText('Collect · Sample A');
+    await page.clock.fastForward(4_000);
+    await expect(page.getByLabel('Cargo capacity')).toHaveText('1 / 2');
+    await expect(page.getByLabel('Science score', { exact: true })).toHaveText('0');
+    await expect(page.getByLabel('Current action')).toHaveText('Return to base');
+    await expect(page.getByRole('region', { name: 'Planetary scene' }).getByText(/Sample A/)).toHaveCount(0);
+    await page.clock.fastForward(16_000);
+    await expect(page.getByLabel('Cargo capacity')).toHaveText('0 / 2');
+    await expect(page.getByLabel('Science score', { exact: true })).toHaveText(points!);
+    await expect(page.getByLabel('Sample A observation')).toContainText('Delivered');
+    await page.getByRole('button', { name: 'Stop expedition' }).click();
+    await expect(page.getByRole('region', { name: 'Expedition results' })).toContainText(`${points} science points`);
+    await expect(objective).toBeDisabled();
+    await page.screenshot({ path: `test-results/science-${value}.png`, fullPage: true });
+    await page.getByRole('button', { name: 'Reset expedition' }).click();
+    await expect(objective).toBeEnabled();
+    await expect(page.getByLabel('Science score', { exact: true })).toHaveText('0');
+    await expect(page.getByLabel('Samples inspected')).toHaveText('0');
+  }
 });

@@ -1,5 +1,5 @@
 import { findRoute, neighbors, positionKey, travelTimeMs } from './navigation';
-import type { Action, Observation, Position, Scenario, TerrainObservation } from './types';
+import type { Action, CargoSample, Observation, Position, Scenario, TerrainObservation } from './types';
 
 // Explicitly project sensed facts; sample properties and world metadata never cross this boundary.
 export function observe(scenario: Scenario, position: Position, atMs: number): Observation[] {
@@ -20,15 +20,45 @@ export function observe(scenario: Scenario, position: Position, atMs: number): O
   if (inRange(scenario.base)) observations.push({ kind: 'base', id: 'base', position: { ...scenario.base }, observedAtMs: atMs });
   for (const sample of scenario.samples) {
     if (inRange(sample.position)) observations.push({
-      kind: 'sample', id: `sample:${sample.id}`, sampleId: sample.id, label: sample.label,
+      kind: 'sample', id: `sample:${sample.id}`, sampleId: sample.id, label: sample.label, status: 'available',
       position: { ...sample.position }, observedAtMs: atMs,
     });
   }
   return observations;
 }
 
+export function scienceCandidates(memory: Observation[], position: Position, cargo: CargoSample[], cargoCapacity: number): Action[] {
+  const terrain = knownTerrain(memory);
+  const cells = new Map(terrain.map(cell => [positionKey(cell.position), cell]));
+  const candidates: Action[] = [];
+  for (const item of memory) {
+    if (item.kind === 'terrain' || (item.kind === 'sample' && item.status !== 'available')) continue;
+    if (item.kind === 'base' && positionKey(item.position) === positionKey(position) && !cargo.length) continue;
+    const route = findRoute(terrain, position, item.position);
+    if (!route) continue;
+    const target = {
+      id: item.kind === 'sample' ? item.sampleId : item.id,
+      label: item.kind === 'sample' ? item.label : 'Base', position: { ...item.position },
+    };
+    const routeEstimate = estimateRoute(route, cells);
+    if (item.kind === 'base') candidates.push({ kind: 'return-to-base', target, routeEstimate });
+    else {
+      if (!item.properties) candidates.push({ kind: 'inspect', target, routeEstimate });
+      if (cargo.length < cargoCapacity) candidates.push({ kind: 'collect', target, routeEstimate });
+    }
+  }
+  return candidates;
+}
+
 export function knownTerrain(memory: Observation[]): TerrainObservation[] {
   return memory.filter(observation => observation.kind === 'terrain');
+}
+
+function estimateRoute(route: Position[], cells: Map<string, TerrainObservation>) {
+  return {
+    distanceCells: route.length,
+    durationMs: route.reduce((duration, step) => duration + travelTimeMs(cells.get(positionKey(step))!.terrain), 0),
+  };
 }
 
 export function explorationCandidates(
@@ -47,10 +77,7 @@ export function explorationCandidates(
     candidates.push({
       kind: 'explore',
       target: { id: `frontier:${positionKey(cell.position)}`, label: `Frontier ${cell.position.x} / ${cell.position.z}`, position: { ...cell.position } },
-      routeEstimate: {
-        distanceCells: route.length,
-        durationMs: route.reduce((duration, step) => duration + travelTimeMs(cells.get(positionKey(step))!.terrain), 0),
-      },
+      routeEstimate: estimateRoute(route, cells),
     });
   }
   return candidates;

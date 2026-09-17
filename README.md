@@ -6,9 +6,9 @@ Give a rover a mission, change its environment, and inspect how its choices affe
 
 ## Project status
 
-[Ticket 01: Watch an autonomous expedition](.scratch/first-playable-release/issues/01-watch-an-autonomous-expedition.md) and [ticket 02: Discover the area through limited perception](.scratch/first-playable-release/issues/02-discover-the-area-through-limited-perception.md) are implemented. Start a local 3D baseline expedition, watch the rover discover terrain and three sample sites, orbit the camera, and use pause/resume, reset, stop, and 1×/2×/4× playback. A five-minute timeout or manual stop displays the ending condition and discoveries. No API key is needed.
+Tickets [01](.scratch/first-playable-release/issues/01-watch-an-autonomous-expedition.md), [02](.scratch/first-playable-release/issues/02-discover-the-area-through-limited-perception.md), and [03: Inspect, collect, and deliver scientific samples](.scratch/first-playable-release/issues/03-inspect-collect-and-deliver-scientific-samples.md) are implemented. Choose Investigate past water or Find unusual minerals, then watch a local 3D baseline expedition discover terrain, inspect samples, collect cargo, and return it to base. Orbit the camera and use pause/resume, reset, stop, and 1×/2×/4× playback. Results show discoveries, inspections, delivered science score, and uncredited cargo. No API key is needed.
 
-The remaining [first playable release tickets](.scratch/first-playable-release/issues/) add sample inspection/collection, energy, scientific objectives, TypeSafe decisions, storms, observation aids, and saved records/replay. Sample properties remain unknown until inspection is implemented in ticket 03.
+The remaining [first playable release tickets](.scratch/first-playable-release/issues/) add energy, mission instructions, TypeSafe decisions, storms, observation aids, and saved records/replay.
 ## Planned complete demo
 
 A local 3D sandbox with one rover, a designed planetary area, a charging base, three sample sites, and a localized dust storm. Five-minute expeditions offer two scientific objectives, editable mission instructions, two-sample cargo capacity, and delivery-only scoring. The rover chooses between exploration, inspection, collection, returning to base, recharging, and waiting. Decisions can be inspected, saved, and replayed.
@@ -41,6 +41,7 @@ Open the local address printed by Vite (normally `http://127.0.0.1:5173`). Start
 bun run typecheck
 bun test tests/expedition.test.ts # focused public-session scenarios
 bun test tests/perception.test.ts # sensor boundaries, memory, and known-map navigation
+bun test tests/science.test.ts    # inspection, cargo, fixed objectives, and delivery scoring
 bun test                        # all non-browser tests
 bun run build
 bun run preview                 # serve the production build locally
@@ -59,19 +60,23 @@ On Linux, Playwright may also need system browser libraries (`bunx playwright in
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium bun run test:browser
 ```
 
-`bun run check` runs typechecking, the production build, the full Bun suite, and the browser smoke checks. These start their own Vite server on port 4173. They verify the scene and labels, autonomous movement, an orbit-camera change while paused, every playback setting, reset, timeout, manual stop, visible sample discovery, and remembered observations with controlled browser time. Screenshots and failure traces go to ignored `test-results/`.
+`bun run check` runs typechecking, the production build, the full Bun suite, and the browser smoke checks. These start their own Vite server on port 4173. They verify the scene and labels, autonomous movement, an orbit-camera change while paused, every playback setting, reset, timeout, manual stop, visible discovery, remembered observations, objective selection, inspection, cargo, and delivery scoring with controlled browser time. Screenshots and failure traces go to ignored `test-results/`.
 
 ### Expedition boundary
 
 `createExpedition()` in `src/simulation/expedition.ts` exposes `dispatch(command)`, `advanceWallTime(milliseconds)`, `getSnapshot()`, and `getRecord()`. The UI and Bun scenarios use this same boundary. A browser timer supplies wall time independently of React Three Fiber frames; controls account for elapsed wall time before changing speed or status. Camera interaction only changes the presentation.
 
-The session advances in 100 ms simulation steps, preserving partial steps across scheduler calls and pauses. Entering plain terrain takes four simulated seconds per cell; rough terrain takes eight. Routes minimize travel time through known traversable cells, with stable tie-breaking. The baseline chooses the nearest supplied frontier by estimated travel time (east, then north on ties), waits five seconds after each target, and repeats bounded waits when no reachable frontier remains. There is no direct piloting.
+The session advances in 100 ms simulation steps, preserving partial steps across scheduler calls and pauses. Entering plain terrain takes four simulated seconds per cell; rough terrain takes eight. Routes minimize travel time through known traversable cells, with stable tie-breaking. The baseline waits five seconds after exploring a frontier, otherwise inspects and collects nearby reachable samples. It returns when its two cargo slots are full or it carries samples with no other reachable sample to pursue. With no sample work, it chooses the nearest frontier by estimated travel time (east, then north on ties), or waits when none remains. There is no direct piloting.
+
+Inspection takes six seconds at the sample and reveals its authored properties; collection is a separate four-second interaction. Collection candidates require a reachable, available sample and a free cargo slot. Returning to base unloads cargo automatically. The fixed objective's rubric credits each delivered sample once: unrelated = 0, suggestive = 5, strong evidence = 10. Properties and classifications remain outside controller inputs before inspection; authored classifications stay private until delivery results. Select the objective before starting; reset begins a fresh expedition and unlocks selection. Battery and recharging arrive in ticket 04.
+
+The baseline follows the same collection strategy for both objectives; their delivery scores differ. Time spent inspecting and delivering reduces exploration time, so an expedition may end with undiscovered sites or undelivered cargo. Cargo still aboard at timeout or manual stop earns no points.
 
 Sensors accurately observe cell centers and objects within a three-cell Euclidean radius, including during travel, without occlusion. The snapshot separates current observations from timestamped rover memory. The scene renders only that memory: bright terrain is in range, dim terrain is remembered, and the dark surface is unknown. Sample labels and mission-control entries distinguish current from remembered observations and show last-seen times. Diamonds mark rough terrain. The authored sites are Sample A near base, Sample B beside the planned storm center at (15, 13), and distant Sample C at (17, 4); their properties are private world data.
 
 Concrete exploration targets are known, reachable cells bordering unknown terrain. Neither candidates nor route estimates use undiscovered terrain or sample properties. The controller receives only current observations, memory, rover position, sensor range, previous action, and those candidates. `createExpedition({ scenario })` supplies alternate starting conditions for public-session scenarios; the browser uses the authored scenario. Rendering reads snapshots and never imports the world catalog.
 
-Snapshots and records are detached copies. `getRecord()` captures full starting conditions separately from controller inputs, plus timestamped first discoveries, exact decision inputs/selections, and ordered lifecycle/action events with baseline attribution. Memory stores the last observation time, refreshed only while an object or cell is sensed. Reset preserves the session history, increments the event's expedition number, restarts simulated time at zero, and restores only the initial sensor observations. Persistence, import/export, and replay are later tickets.
+Snapshots and records are detached copies. `getRecord()` captures full starting conditions separately from controller inputs, plus timestamped first discoveries, objective selections, inspections, collections, deliveries, exact decision inputs/selections, and ordered lifecycle/action events with baseline attribution. Memory stores the last observation time, refreshed only while an object or cell is sensed, plus inspection time and the rover's known cargo/delivery status. Collected samples disappear from the scene but remain in discovery history. Reset preserves the session history and selected objective, increments the event's expedition number, restarts simulated time at zero, clears cargo and science results, and restores only the initial sensor observations. Persistence, import/export, and replay are later tickets.
 
 ## Design principles
 

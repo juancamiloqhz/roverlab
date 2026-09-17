@@ -1,7 +1,7 @@
 import type { Scenario } from './types';
 
 export const authoredScenario: Scenario = {
-  id: 'ochre-basin-v2',
+  id: 'ochre-basin-v3',
   name: 'Ochre Basin',
   width: 21,
   depth: 19,
@@ -19,9 +19,21 @@ export const authoredScenario: Scenario = {
     { x: 15, z: 5 }, { x: 16, z: 5 }, { x: 17, z: 5 },
   ],
   samples: [
-    { id: 'a', label: 'Sample A', position: { x: 7, z: 13 }, properties: ['Layered sediment'] },
+    {
+      id: 'a', label: 'Sample A', position: { x: 7, z: 13 },
+      properties: ['Layered sediment', 'Rounded grains deposited by flowing water'],
+      classifications: { 'past-water': 'strong-evidence', 'unusual-minerals': 'unrelated' },
+    },
     // Tempting site beside the planned storm center (15, 13); the storm is ticket 08.
-    { id: 'b', label: 'Sample B', position: { x: 15, z: 13 }, properties: ['Crystalline inclusions'] },
-    { id: 'c', label: 'Sample C', position: { x: 17, z: 4 }, properties: ['Veined rock'] },
+    {
+      id: 'b', label: 'Sample B', position: { x: 15, z: 13 },
+      properties: ['Crystalline inclusions', 'Rare mineral intergrowths in dry volcanic rock'],
+      classifications: { 'past-water': 'unrelated', 'unusual-minerals': 'strong-evidence' },
+    },
+    {
+      id: 'c', label: 'Sample C', position: { x: 17, z: 4 },
+      properties: ['Veined rock', 'Possible fluid alteration and uncommon mineral traces'],
+      classifications: { 'past-water': 'suggestive', 'unusual-minerals': 'suggestive' },
+    },
   ],
 };
