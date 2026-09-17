@@ -42,7 +42,7 @@ function describeAction(action: Action | null, status: ExpeditionSnapshot['statu
 }
 
 export function App({ createSession }: { createSession?: () => ExpeditionSession } = {}) {
-  const { snapshot, decisions, dispatch } = useExpedition(createSession);
+  const { snapshot, decisions, dispatch, getFullWorldView } = useExpedition(createSession);
   const { status, currentAction, rover } = snapshot;
   const controllerLabel = controllerLabels[snapshot.controller];
   const controllerHistoryLabel = snapshot.controllerHistory.map(entry => controllerLabels[entry.controller]).join(' → ');
@@ -69,8 +69,8 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
         </div>
         <div className="workspace">
           <div className="world-column">
-            <div className="world-heading"><span><i className={`status-dot ${status}`} />{snapshot.endingCondition === 'stranded' ? 'Rover stranded' : statusLabel}</span><span className="world-heading-right">ORBIT CAMERA</span></div>
-            <ExpeditionScene snapshot={snapshot} />
+            <div className="world-heading"><span><i className={`status-dot ${status}`} />{snapshot.endingCondition === 'stranded' ? 'Rover stranded' : statusLabel}</span><span className="world-heading-right">OBSERVATION VIEW</span></div>
+            <ExpeditionScene snapshot={snapshot} getFullWorldView={getFullWorldView} />
             <section className="control-bar" aria-label="Expedition controls">
               <div className="transport">
                 {status === 'ready' && <button className="primary" onClick={() => dispatch({ type: 'start' })}><span aria-hidden="true">▶</span> Start expedition</button>}

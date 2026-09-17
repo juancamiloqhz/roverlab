@@ -34,6 +34,13 @@ export type SampleObservation = Observed & {
   kind: 'sample'; sampleId: string; label: string; status: 'available' | 'cargo' | 'delivered';
   properties?: string[]; inspectedAtMs?: number;
 };
+// Presentation-only world truth. Never part of a snapshot or controller input.
+export type FullWorldView = {
+  terrain: Pick<TerrainObservation, 'id' | 'position' | 'terrain' | 'blocked'>[];
+  samples: Pick<SampleObservation, 'id' | 'label' | 'position'>[];
+  base: Position;
+  storm: DustStorm | null;
+};
 export type Observation = TerrainObservation
   | (Observed & { kind: 'base' })
   | SampleObservation | StormObservation;

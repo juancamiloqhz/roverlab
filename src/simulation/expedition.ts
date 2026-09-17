@@ -5,7 +5,7 @@ import { explorationCandidates, knownTerrain, observe, scienceCandidates } from 
 import { authoredScenario } from './scenario';
 import { knownStorm } from './storm';
 import { scienceRubric } from './science';
-import type { Action, ActionCandidate, ControllerInput, Decision, DustStorm, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, Position, Scenario, ScientificObjective } from './types';
+import type { Action, ActionCandidate, ControllerInput, Decision, DustStorm, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, FullWorldView, Position, Scenario, ScientificObjective } from './types';
 
 const STEP_MS = 100;
 const DURATION_MS = 300_000;
@@ -17,6 +17,10 @@ const roundEnergy = (value: number) => Math.round(value * 1e9) / 1e9;
 
 export function createExpedition(options: { scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController } = {}) {
   const scenario = structuredClone(options.scenario ?? authoredScenario);
+  // Reuse the world's terrain projection without installing it in rover knowledge.
+  const fullTerrain = observe(scenario, scenario.base, 0, Infinity)
+    .filter(item => item.kind === 'terrain')
+    .map(({ id, position, terrain, blocked }) => ({ id, position, terrain, blocked }));
   let objective = options.objective ?? 'past-water';
   let instructions = '';
   const baseline: ExpeditionController = { id: 'baseline', decide: input => chooseBaselineAction(input).id };
@@ -378,6 +382,14 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
 
   return {
     getSnapshot: () => structuredClone(state),
+    getFullWorldView(): FullWorldView {
+      const removed = new Set([...state.cargo, ...state.deliveredSamples].map(sample => sample.sampleId));
+      return structuredClone({
+        terrain: fullTerrain, base: scenario.base, storm,
+        samples: scenario.samples.filter(sample => !removed.has(sample.id))
+          .map(sample => ({ id: `sample:${sample.id}`, label: sample.label, position: sample.position })),
+      });
+    },
     getDecisions: () => structuredClone(decisions),
     onDecisionSettled(listener: () => void) {
       decisionListeners.add(listener);

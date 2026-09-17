@@ -136,3 +136,15 @@ footer { display: flex; justify-content: space-between; gap: 20px; border-top: 1
 .storm-control h3 { margin: 6px 0 0; font-size: 15px; color: #e8c791; }
 .storm-control p { flex-basis: 100%; margin: 0; font-size: 12px; line-height: 1.6; color: #bec6b4; }
 .storm-label { background: #5f421ee8; color: #ffe3ad; }
+
+.scene-controls { position: absolute; top: 64px; left: 20px; right: 20px; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px; border-radius: 6px; background: #1c292af2; color: #e3ebd5; font-size: 11px; }
+.camera-controls { display: flex; gap: 4px; }
+.camera-controls button { padding: 7px 9px; border: 1px solid #617667; border-radius: 4px; color: #d3dfcf; background: transparent; font-size: 11px; }
+.camera-controls button[aria-pressed="true"] { color: #1b3027; background: #b8d9a4; }
+.scene-controls label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.scene-controls input { accent-color: #b8d9a4; }
+.scene-controls input:focus-visible { outline: 2px solid #b8efc6; outline-offset: 3px; }
+.debug-notice { position: absolute; left: 20px; right: 20px; bottom: 70px; z-index: 20; margin: 0; padding: 8px 10px; border-radius: 4px; color: #ffedc8; background: #593e24ed; font-size: 11px; pointer-events: none; }
+.sensor-legend { position: absolute; left: 20px; bottom: 43px; z-index: 20; color: #dbffff; background: #214b4ce8; border-radius: 4px; padding: 5px 8px; font-size: 10px; pointer-events: none; }
+.sensor-legend strong { font-weight: 500; }
+@media (max-width: 500px) { .scene-controls { left: 10px; right: 10px; gap: 8px; font-size: 10px; } .world-heading-right { display: none; } }

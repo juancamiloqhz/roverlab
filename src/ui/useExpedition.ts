@@ -46,5 +46,5 @@ export function useExpedition(createSession: () => ExpeditionSession = createDef
     refresh();
   };
 
-  return { snapshot, decisions, dispatch };
+  return { snapshot, decisions, dispatch, getFullWorldView: session.getFullWorldView };
 }
