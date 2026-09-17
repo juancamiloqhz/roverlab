@@ -3,12 +3,13 @@ import type { ControllerInput } from '../src/simulation/types';
 
 export const DECISION_DEADLINE_MS = 5_000;
 export const INFERENCE_LIMIT = 100;
+export const MAX_MISSION_INSTRUCTIONS_LENGTH = 20_000;
 const number = z.number().finite().nonnegative();
 const text = z.string().max(20_000);
 const identity = z.string().min(1).max(200);
 const position = z.strictObject({ x: number, z: number });
 const observed = { id: identity, position, observedAtMs: number };
-const observation = z.discriminatedUnion('kind', [
+export const observationSchema = z.discriminatedUnion('kind', [
   z.strictObject({ ...observed, kind: z.literal('terrain'), terrain: z.enum(['plain', 'rough']), blocked: z.boolean() }),
   z.strictObject({ ...observed, kind: z.literal('base') }),
   z.strictObject({ ...observed, kind: z.literal('dust-storm'), radius: number.positive(), expiresAtMs: number,
@@ -34,13 +35,14 @@ const candidate = z.discriminatedUnion('kind', [
   action.options[2].extend({ id: identity }), action.options[3].extend({ id: identity }),
   action.options[4].extend({ id: identity }), action.options[5].extend({ id: identity }),
 ]);
+export const recordedActionSchema = z.union([action, candidate]);
 export const controllerInputSchema: z.ZodType<ControllerInput> = z.strictObject({
-  remainingMs: number, energyUsed: number, instructions: text, instructionsVersion: number.int(),
+  remainingMs: number, energyUsed: number, instructions: z.string().max(MAX_MISSION_INSTRUCTIONS_LENGTH), instructionsVersion: number.int(),
   battery: number, batteryCapacity: number.positive(), objective: z.enum(['past-water', 'unusual-minerals']),
   cargo: z.array(z.strictObject({ sampleId: identity, label: text })).max(2), cargoCapacity: number.int().positive(),
-  atMs: number, position, sensorRange: number, observations: z.array(observation).max(10_000),
-  memory: z.array(observation).max(10_000), candidates: z.array(candidate).min(1).max(10_000),
-  previousAction: z.union([action, candidate]).nullable(),
+  atMs: number, position, sensorRange: number, observations: z.array(observationSchema).max(10_000),
+  memory: z.array(observationSchema).max(10_000), candidates: z.array(candidate).min(1).max(10_000),
+  previousAction: recordedActionSchema.nullable(),
 }).refine(input => new Set(input.candidates.map(item => item.id)).size === input.candidates.length);
 
 export const failureSchema = z.enum(['configuration', 'unavailable', 'deadline', 'invalid-output', 'invalid-request', 'budget', 'cancelled']);

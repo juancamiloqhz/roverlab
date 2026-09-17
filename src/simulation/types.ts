@@ -160,3 +160,15 @@ export type EventDetail =
   | { type: 'action-started' | 'action-completed' | 'action-cancelled'; action: Action; controller: ExpeditionController['id'] }
   | { type: 'ended'; condition: EndingCondition };
 export type ExpeditionEvent = EventDetail & { sequence: number; expedition: number; atMs: number };
+
+export type ExpeditionStartingConditions = {
+  scenario: Scenario; objective: ScientificObjective; instructions: string; rubric: ScienceRubric;
+  durationMs: number; fixedStepMs: number; travelTimeMs: Record<Terrain, number>;
+  rechargePerSecond: number; batteryCapacity: number; initialBattery: number; movementEnergy: Record<Terrain, number>;
+  waitMs: number; inspectMs: number; collectMs: number; cargoCapacity: number; controller: ExpeditionController['id'];
+};
+export type ExpeditionRecord = {
+  format: 'roverlab-expedition'; version: 1; id: string; completedAt: string;
+  startingConditions: ExpeditionStartingConditions;
+  events: ExpeditionEvent[]; decisions: Decision[]; results: ExpeditionSnapshot;
+};

@@ -1,7 +1,11 @@
+import { useState } from 'react';
+import { ExpeditionResults } from './ExpeditionResults';
+import { SavedExpeditions, SavedExpeditionView } from './SavedExpeditions';
+import { formatTime } from './formatTime';
 import type { ExpeditionSession } from '../simulation/expedition';
 import { ExpeditionScene } from '../scene/ExpeditionScene';
 import { scientificObjectives } from '../simulation/science';
-import type { Action, ExpeditionSnapshot, ScientificObjective } from '../simulation/types';
+import type { Action, ExpeditionSnapshot, ExpeditionRecord, ScientificObjective } from '../simulation/types';
 import { DecisionTimeline } from './DecisionTimeline';
 import { StormControl } from './StormControl';
 import { MissionInstructions } from './MissionInstructions';
@@ -9,11 +13,6 @@ import { useExpedition } from './useExpedition';
 import './styles.css';
 import { failureMessages, INFERENCE_LIMIT } from '../../shared/decisions';
 import { controllerLabels } from './controllerLabels';
-
-const formatTime = (ms: number) => {
-  const seconds = Math.ceil(ms / 1_000);
-  return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
-};
 
 function describeAction(action: Action | null, status: ExpeditionSnapshot['status']) {
   switch (action?.kind) {
@@ -42,15 +41,15 @@ function describeAction(action: Action | null, status: ExpeditionSnapshot['statu
 }
 
 export function App({ createSession }: { createSession?: () => ExpeditionSession } = {}) {
-  const { snapshot, decisions, dispatch, getFullWorldView } = useExpedition(createSession);
+  const { snapshot, decisions, completedRecords, pauseForInspection, dispatch, getFullWorldView } = useExpedition(createSession);
+  const [selectedRecord, setSelectedRecord] = useState<ExpeditionRecord | null>(null);
+  const openRecord = (record: ExpeditionRecord) => { pauseForInspection(); setSelectedRecord(record); window.scrollTo({ top: 0, behavior: 'instant' }); };
   const { status, currentAction, rover } = snapshot;
   const controllerLabel = controllerLabels[snapshot.controller];
-  const controllerHistoryLabel = snapshot.controllerHistory.map(entry => controllerLabels[entry.controller]).join(' → ');
   const knownCells = snapshot.memory.filter(item => item.kind === 'terrain').length;
   const samples = snapshot.memory.filter(item => item.kind === 'sample');
   const currentIds = new Set(snapshot.observations.map(item => item.id));
   const active = status === 'running' || status === 'paused';
-  const endingLabel = snapshot.endingCondition && { timeout: 'Time budget reached', 'manual-stop': 'Stopped by mission control', stranded: 'Stranded rover' }[snapshot.endingCondition];
   const statusLabel = snapshot.decisionPending && active ? 'Decision pending · Expedition time frozen' : { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
   const { label: actionLabel, description: actionDescription } = snapshot.decisionPending && active
     ? { label: 'Awaiting decision', description: 'Expedition time and resources are frozen. Camera and mission controls remain available.' }
@@ -60,9 +59,10 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
     <div className="app-shell">
       <header className="app-header">
         <div className="brand"><span className="brand-mark" aria-hidden="true">↗</span><h1>RoverLab</h1><span className="brand-divider" /><span className="brand-subtitle">Planetary exploration sandbox</span></div>
-        <span className="local-tag"><i /> Local expedition</span>
+        <a className="records-link" href="#saved-expeditions">Saved expeditions</a><span className="local-tag"><i /> {selectedRecord ? 'Saved expedition' : 'Local expedition'}</span>
       </header>
       <main>
+        {selectedRecord ? <SavedExpeditionView key={selectedRecord.id} record={selectedRecord} onClose={() => setSelectedRecord(null)} /> : <>
         <div className="page-heading">
           <div><p className="eyebrow">{snapshot.controllerHistory.map(entry => entry.controller.toUpperCase()).join(' → ')} EXPEDITION</p><h2>{snapshot.area.name}<span className="title-dot">.</span></h2><p className="page-description">An unknown world. An autonomous rover. Discover it together.</p></div>
           <div className="scenario-info"><span>AUTHORED SCENARIO</span><strong>{snapshot.area.width} × {snapshot.area.depth} <span>grid</span></strong><small>{snapshot.durationMs / 60_000}-minute expedition</small></div>
@@ -150,10 +150,12 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
                 {delivery && <small>{delivery.classification === 'strong-evidence' ? 'Strong evidence' : delivery.classification === 'suggestive' ? 'Suggestive' : 'Unrelated'} · {delivery.score} science points</small>}
               </div>; })}
             </section>
-            {status === 'ended' && <section className="result" aria-label="Expedition results" aria-live="polite"><span className="field-label">ENDING CONDITION</span><h3>{endingLabel}</h3>{snapshot.endingCondition === 'stranded' && <p>The battery was exhausted away from base.</p>}<p>{scientificObjectives[snapshot.objective]} · {snapshot.scienceScore} science points from {snapshot.deliveredSamples.length} delivered samples.</p><p>{knownCells} terrain cells and {snapshot.discoveryCount} samples discovered; {snapshot.inspectionCount} inspected in {formatTime(snapshot.elapsedMs)} of expedition time.</p><p>{snapshot.energyUsed.toFixed(1)} energy units used; {snapshot.battery.toFixed(1)} / {snapshot.batteryCapacity} battery remaining.</p><p>Controllers used: {controllerHistoryLabel}.</p><p>{snapshot.inferenceAttempts} inference attempts · {snapshot.inferenceLatencyMs.toFixed(0)} ms total request latency (wall time).</p><p>{snapshot.cargo.length} samples remain aboard without delivery credit.</p></section>}
+            {status === 'ended' && <ExpeditionResults snapshot={snapshot} />}
           </aside>
         </div>
-        <footer><span>ROVERLAB <span className="footer-separator">/</span> AUTONOMOUS EXPLORATION</span><span>{controllerLabel} · {snapshot.area.id}</span></footer>
+        </>}
+        <SavedExpeditions completedRecords={completedRecords} onOpen={openRecord} />
+        <footer><span>ROVERLAB <span className="footer-separator">/</span> AUTONOMOUS EXPLORATION</span><span>{selectedRecord ? selectedRecord.results.controllerHistory.map(entry => controllerLabels[entry.controller]).join(' → ') : controllerLabel} · {selectedRecord?.results.area.id ?? snapshot.area.id}</span></footer>
       </main>
     </div>
   );

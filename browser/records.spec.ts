@@ -1,0 +1,172 @@
+import { readFile } from 'node:fs/promises';
+import { expect, test } from '@playwright/test';
+
+test('completed records persist across reload, selection and JSON exchange without inference', async ({ page, browser }) => {
+  await page.clock.install();
+  let inferenceRequests = 0;
+  page.on('request', request => { if (request.url().includes('/api/')) inferenceRequests++; });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await page.clock.fastForward(90_000);
+  await page.getByRole('button', { name: 'Introduce dust storm' }).click();
+  await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Avoid costly crossings.');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await page.clock.fastForward(210_000);
+  const results = await page.getByRole('region', { name: 'Expedition results', exact: true }).textContent();
+  const library = page.getByRole('region', { name: 'Saved expeditions', exact: true });
+  await expect(library.getByRole('button', { name: /Open expedition/ })).toHaveCount(1);
+  await library.getByRole('button', { name: /Open expedition/ }).click();
+  const archived = page.getByRole('region', { name: 'Saved expedition', exact: true });
+  await expect(archived.getByRole('region', { name: 'Expedition results' })).toHaveText(results!);
+  const download = page.waitForEvent('download');
+  await archived.getByRole('button', { name: 'Export expedition JSON' }).click();
+  const json = await readFile((await (await download).path())!, 'utf8');
+  const record = JSON.parse(json);
+  expect(record.events.some((event: { type: string }) => event.type === 'storm-detected')).toBe(true);
+  expect(record.events.some((event: { type: string }) => event.type === 'instructions-changed')).toBe(true);
+  expect(json).not.toContain('browser-test-key');
+
+  await page.reload();
+  await library.getByRole('button', { name: /Open expedition/ }).click();
+  await expect(archived.getByRole('table', { name: 'Final rover memory' })).toContainText('Sample A');
+  await expect(archived.getByRole('region', { name: 'Expedition results' })).toHaveText(results!);
+  await page.getByRole('button', { name: 'Return to live expedition' }).click();
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await page.clock.fastForward(1_000);
+  await library.getByRole('button', { name: /Open expedition/ }).click();
+  await page.clock.fastForward(60_000);
+  await page.getByRole('button', { name: 'Return to live expedition' }).click();
+  await expect(page.getByRole('button', { name: 'Resume expedition' })).toBeVisible();
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('04:59');
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await expect(library.getByRole('button', { name: /Open expedition/ })).toHaveCount(2);
+  await library.getByRole('button', { name: /Open expedition/ }).last().click();
+  await expect(archived.getByRole('region', { name: 'Expedition results' })).toHaveText(results!);
+
+  const context = await browser.newContext({ baseURL: 'http://127.0.0.1:4173' });
+  const importedPage = await context.newPage();
+  importedPage.on('request', request => { if (request.url().includes('/api/')) inferenceRequests++; });
+  await importedPage.goto('/');
+  const file = { name: 'expedition.json', mimeType: 'application/json', buffer: Buffer.from(json) };
+  await importedPage.getByLabel('Import expedition JSON').setInputFiles(file);
+  const imported = importedPage.getByRole('region', { name: 'Saved expedition', exact: true });
+  await expect(imported.getByRole('region', { name: 'Expedition results' })).toHaveText(results!);
+  await imported.getByText(/Decision 1 ·/).click();
+  await expect(imported.getByRole('table', { name: 'Observations used' })).toBeVisible();
+  await expect(imported.getByRole('table', { name: 'Available actions' })).not.toContainText('Returned probability');
+  const exchangedDownload = importedPage.waitForEvent('download');
+  await imported.getByRole('button', { name: 'Export expedition JSON' }).click();
+  expect(JSON.parse(await readFile((await (await exchangedDownload).path())!, 'utf8'))).toEqual(record);
+  await importedPage.getByLabel('Import expedition JSON').setInputFiles(file);
+  await expect(importedPage.getByRole('button', { name: /Open expedition/ })).toHaveCount(1);
+  await importedPage.getByLabel('Import expedition JSON').setInputFiles({ ...file, buffer: Buffer.from('{broken') });
+  await expect(importedPage.getByRole('alert')).toContainText('Invalid JSON');
+  await expect(importedPage.getByRole('button', { name: /Open expedition/ })).toHaveCount(1);
+  await importedPage.getByLabel('Import expedition JSON').setInputFiles({ ...file, buffer: Buffer.from(JSON.stringify({ ...record, credentials: 'test-secret' })) });
+  await expect(importedPage.getByRole('alert')).toContainText('Invalid expedition record');
+  await expect(imported.getByRole('region', { name: 'Expedition results' })).toHaveText(results!);
+  const conflict = JSON.parse(json);
+  conflict.completedAt = '2020-01-01T00:00:00.000Z';
+  await importedPage.getByLabel('Import expedition JSON').setInputFiles({ ...file, buffer: Buffer.from(JSON.stringify(conflict)) });
+  await expect(importedPage.getByRole('alert')).toContainText('already exists with different data');
+  await expect(importedPage.getByRole('button', { name: /Open expedition/ })).toHaveCount(1);
+  await importedPage.screenshot({ path: 'test-results/saved-expedition.png', fullPage: true });
+  expect(inferenceRequests).toBe(0);
+  await context.close();
+});
+
+test('TypeSafe-only and mixed-controller histories survive browser storage and import without a backend', async ({ page, browser }) => {
+  await page.clock.install();
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await expect(page.getByLabel('Current action')).toContainText('Wait');
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  const library = page.getByRole('region', { name: 'Saved expeditions', exact: true });
+  await expect(library).toContainText('Saved in this browser');
+  await library.getByRole('button', { name: /Open expedition/ }).click();
+  let download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export expedition JSON' }).click();
+  const typesafe = await readFile((await (await download).path())!, 'utf8');
+
+  await page.getByRole('button', { name: 'Return to live expedition' }).click();
+  await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await expect(page.getByLabel('Current action')).toContainText('Wait');
+  await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Invalid choice for browser verification');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await page.clock.fastForward(5_000);
+  await expect(page.getByRole('region', { name: 'Inference recovery' })).toBeVisible();
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByLabel('Inference usage')).toContainText('3 / 100');
+  await page.getByRole('button', { name: 'Continue with the baseline controller' }).click();
+  await page.clock.fastForward(90_000);
+  await page.getByRole('button', { name: 'Introduce dust storm' }).click();
+  await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Conserve energy after recovery.');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await page.clock.fastForward(50_000);
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await expect(library.getByText('Saved in this browser', { exact: true })).toHaveCount(2);
+  await page.reload();
+  await expect(library.getByRole('button', { name: /Open expedition/ })).toHaveCount(2);
+  await library.getByRole('button', { name: /Open expedition/ }).first().click();
+  await expect(page.getByRole('region', { name: 'Expedition results' })).toContainText('TypeSafe controller → Baseline controller');
+  download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export expedition JSON' }).click();
+  const mixed = await readFile((await (await download).path())!, 'utf8');
+  expect(JSON.parse(mixed).events.some((event: { type: string }) => event.type === 'controller-changed')).toBe(true);
+  expect(JSON.parse(mixed).events.some((event: { type: string }) => event.type === 'storm-introduced')).toBe(true);
+
+  const context = await browser.newContext({ baseURL: 'http://127.0.0.1:4173' });
+  const viewer = await context.newPage();
+  let inferenceRequests = 0;
+  await viewer.route('**/api/**', route => { inferenceRequests++; return route.abort(); });
+  await viewer.goto('/');
+  for (const [json, controllers] of [[typesafe, 'TypeSafe controller.'], [mixed, 'TypeSafe controller → Baseline controller.']]) {
+    await viewer.getByLabel('Import expedition JSON').setInputFiles({ name: 'expedition.json', mimeType: 'application/json', buffer: Buffer.from(json!) });
+    await expect(viewer.getByRole('region', { name: 'Expedition results' })).toContainText(`Controllers used: ${controllers}`);
+    await viewer.getByText(/Decision 1 ·/).click();
+    await expect(viewer.getByRole('table', { name: 'Available actions' })).toContainText('Returned probability');
+    const copy = viewer.waitForEvent('download');
+    await viewer.getByRole('button', { name: 'Export expedition JSON' }).click();
+    expect(JSON.parse(await readFile((await (await copy).path())!, 'utf8'))).toEqual(JSON.parse(json!));
+  }
+  expect(inferenceRequests).toBe(0);
+  await context.close();
+});
+
+
+test('a completed expedition stays exportable when browser storage is unavailable', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'indexedDB', { value: { open() { throw new DOMException('Browser storage is disabled.', 'SecurityError'); } } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  const library = page.getByRole('region', { name: 'Saved expeditions', exact: true });
+  await expect(library.getByRole('alert')).toContainText('Browser storage is disabled');
+  await expect(library).toContainText('Not saved yet');
+  await library.getByRole('button', { name: /Open expedition/ }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export expedition JSON' }).click();
+  const record = JSON.parse(await readFile((await (await download).path())!, 'utf8'));
+  expect(record.results.endingCondition).toBe('manual-stop');
+  expect(record.events.at(-1).type).toBe('ended');
+});
+
+
+test('oversized instruction drafts receive feedback before applying and corrected instructions remain savable', async ({ page }) => {
+  await page.goto('/');
+  const instructions = page.getByRole('textbox', { name: 'Mission instructions' });
+  await instructions.fill('x'.repeat(20_001));
+  await expect(page.getByRole('button', { name: 'Apply instructions' })).toBeDisabled();
+  await expect(page.getByText('Mission instructions must be 20,000 characters or fewer before applying.')).toBeVisible();
+  await instructions.fill('Preserve the mission history.');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  const library = page.getByRole('region', { name: 'Saved expeditions', exact: true });
+  await expect(library).toContainText('Saved in this browser');
+  await library.getByRole('button', { name: /Open expedition/ }).click();
+  await expect(page.getByRole('region', { name: 'Saved expedition', exact: true })).toContainText('Final mission instructions: Preserve the mission history.');
+});

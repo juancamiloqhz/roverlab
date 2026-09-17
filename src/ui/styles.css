@@ -148,3 +148,23 @@ footer { display: flex; justify-content: space-between; gap: 20px; border-top: 1
 .sensor-legend { position: absolute; left: 20px; bottom: 43px; z-index: 20; color: #dbffff; background: #214b4ce8; border-radius: 4px; padding: 5px 8px; font-size: 10px; pointer-events: none; }
 .sensor-legend strong { font-weight: 500; }
 @media (max-width: 500px) { .scene-controls { left: 10px; right: 10px; gap: 8px; font-size: 10px; } .world-heading-right { display: none; } }
+
+.record-library { margin: 28px 0; padding: 16px 20px; border: 1px solid #35413e; border-radius: 9px; background: #172325; }
+.record-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.record-toolbar h3 { margin: 0; font-size: 15px; font-weight: 500; }
+.record-toolbar h3 span { margin-left: 8px; font-size: 12px; color: #aec4af; }
+.record-import { font-size: 11px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.record-import input { max-width: 240px; color: #aec4af; font: inherit; }
+.record-import input::file-selector-button { cursor: pointer; border: 1px solid #4b6151; border-radius: 4px; padding: 7px; background: #23332e; color: #e8eee9; }
+.record-library ul { margin: 16px 0 0; padding: 0; list-style: none; max-height: 180px; overflow: auto; }
+.record-library li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid #334039; }
+.record-library li div { display: flex; flex-direction: column; gap: 5px; }
+.record-library li strong { font-size: 12px; font-weight: 500; }
+.record-library li small { font-size: 10px; color: #aec4af; }
+.record-library [role="alert"], .saved-expedition [role="alert"] { color: #edc387; font-size: 12px; }
+.saved-expedition { max-width: 1050px; margin: 0 auto; }
+.saved-expedition > p { font-size: 12px; color: #aec4af; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+.saved-expedition .result p { font-size: 12px; }
+
+.records-link { color: #b8d9a4; font-size: 12px; margin-left: auto; margin-right: 24px; }
+@media (max-width: 500px) { .app-header .local-tag { display: none; } .records-link { margin-right: 0; } }

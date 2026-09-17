@@ -10,7 +10,7 @@ const actionName = (action: Action) => 'target' in action
   : `${action.kind} · ${seconds(action.durationMs)}`;
 const reasons = { start: 'Expedition started', 'action-completed': 'Action completed', 'instructions-changed': 'Instructions changed', 'new-observations': 'New observations', 'storm-detected': 'Dust storm detected', 'storm-expired': 'Known dust storm expired', retry: 'Retry requested by mission control', 'controller-changed': 'Controller changed by mission control' };
 
-function ObservationTable({ title, observations }: { title: string; observations: Observation[] }) {
+export function ObservationTable({ title, observations }: { title: string; observations: Observation[] }) {
   return <div className="decision-table"><table aria-label={title}>
     <caption>{title} · {observations.length}</caption>
     <thead><tr><th>Observation</th><th>Position</th><th>Last seen</th><th>Known details</th></tr></thead>

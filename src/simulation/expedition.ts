@@ -1,11 +1,11 @@
 import { chooseBaselineAction } from '../controllers/baseline';
-import { INFERENCE_LIMIT, type DecisionOutcome } from '../../shared/decisions';
+import { INFERENCE_LIMIT, MAX_MISSION_INSTRUCTIONS_LENGTH, type DecisionOutcome } from '../../shared/decisions';
 import { findRoute, movementEnergy, positionKey, travelCost, travelTimeMs } from './navigation';
 import { explorationCandidates, knownTerrain, observe, scienceCandidates } from './perception';
 import { authoredScenario } from './scenario';
 import { knownStorm } from './storm';
 import { scienceRubric } from './science';
-import type { Action, ActionCandidate, ControllerInput, Decision, DustStorm, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, FullWorldView, Position, Scenario, ScientificObjective } from './types';
+import type { Action, ActionCandidate, ControllerInput, Decision, DustStorm, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, ExpeditionRecord, ExpeditionStartingConditions, FullWorldView, Position, Scenario, ScientificObjective } from './types';
 
 const STEP_MS = 100;
 const DURATION_MS = 300_000;
@@ -28,12 +28,16 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
   let decisions: Decision[] = [];
   const decisionListeners = new Set<() => void>();
   let inFlight: { decision: Decision; expedition: number; abort: AbortController } | null = null;
-  const startingConditions = {
+  const startingConditions: ExpeditionStartingConditions = {
     scenario, objective, instructions, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
     travelTimeMs: { plain: travelTimeMs('plain'), rough: travelTimeMs('rough') },
     rechargePerSecond: RECHARGE_PER_SECOND, batteryCapacity: 100, initialBattery: 100, movementEnergy: { plain: movementEnergy('plain'), rough: movementEnergy('rough') },
     waitMs: WAIT_MS, inspectMs: INSPECT_MS, collectMs: COLLECT_MS, cargoCapacity: 2, controller: controller.id,
   };
+  let runStartingConditions = startingConditions;
+  const completedRecords: ExpeditionRecord[] = [];
+  const completionListeners = new Set<(record: ExpeditionRecord) => void>();
+  const pendingCompletions = new Map<number, Omit<ExpeditionRecord, 'events'>>();
   const events: ExpeditionEvent[] = [];
   let expedition = 1;
   let storm: DustStorm | null = null;
@@ -132,13 +136,17 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     inFlight = null;
     state.decisionPending = false;
     decision.latencyMs = latencyMs;
-    if (request.expedition === expedition) {
-      state.decisionRevision++;
-      if (decision.controller === 'typesafe') state.inferenceLatencyMs += latencyMs;
+    const settledState = request.expedition === expedition ? state
+      : pendingCompletions.get(request.expedition)?.results;
+    if (settledState) {
+      settledState.decisionPending = false;
+      settledState.decisionRevision++;
+      if (decision.controller === 'typesafe') settledState.inferenceLatencyMs += latencyMs;
     }
     if (request.expedition !== expedition || decision.input.instructionsVersion !== state.instructionsVersion
       || state.status === 'ended' || state.status === 'ready' || decision.status === 'discarded') {
       events.push({ type: 'decision-settled', decision: structuredClone(decision), expedition: request.expedition, atMs: decision.input.atMs, sequence: events.length });
+      completeRecord();
       selectAction();
       return;
     }
@@ -303,6 +311,24 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     state.endingCondition = condition;
     pendingMs = 0;
     record({ type: 'ended', condition });
+    // Hold these run-owned references until any cancelled inference has settled,
+    // even if mission control resets before its latency becomes available.
+    pendingCompletions.set(expedition, {
+      format: 'roverlab-expedition', version: 1, id: crypto.randomUUID(), completedAt: new Date().toISOString(),
+      startingConditions: runStartingConditions, decisions, results: state,
+    });
+    completeRecord();
+  }
+
+  function completeRecord() {
+    for (const [completedExpedition, completed] of pendingCompletions) {
+      if (inFlight?.expedition === completedExpedition) continue;
+      const record = structuredClone({ ...completed, events: events.filter(event => event.expedition === completedExpedition) });
+      record.results.decisionPending = false;
+      pendingCompletions.delete(completedExpedition);
+      completedRecords.push(record);
+      for (const listener of completionListeners) listener(structuredClone(record));
+    }
   }
 
   function tick() {
@@ -382,6 +408,11 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
 
   return {
     getSnapshot: () => structuredClone(state),
+    getCompletedRecords: () => structuredClone(completedRecords),
+    onExpeditionCompleted(listener: (record: ExpeditionRecord) => void) {
+      completionListeners.add(listener);
+      return () => { completionListeners.delete(listener); };
+    },
     getFullWorldView(): FullWorldView {
       const removed = new Set([...state.cargo, ...state.deliveredSamples].map(sample => sample.sampleId));
       return structuredClone({
@@ -401,6 +432,9 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       discoveryCount: state.discoveryCount, inspectionCount: state.inspectionCount,
     } }),
     dispatch(command: ExpeditionCommand) {
+      if (command.type === 'set-instructions' && command.instructions.length > MAX_MISSION_INSTRUCTIONS_LENGTH) {
+        throw new RangeError('Mission instructions must be 20,000 characters or fewer.');
+      }
       if (command.type === 'introduce-storm' && scenario.dustStorm && !state.stormIntroduced && state.status !== 'ended') {
         const { durationMs, ...configuration } = scenario.dustStorm;
         storm = { ...structuredClone(configuration), id: 'dust-storm', expiresAtMs: state.elapsedMs + durationMs };
@@ -461,6 +495,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
         invalidateDecision();
         if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: controller.id });
         expedition++;
+        runStartingConditions = { ...startingConditions, objective, instructions, controller: controller.id };
         decisions = [];
         storm = null;
         movementEnergyMultiplier = 1;
