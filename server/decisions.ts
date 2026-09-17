@@ -32,7 +32,7 @@ export function createDecisionHandler(options: { apiKey?: string; fetch?: Fetch;
       const result = await client.systemOne({
         state: input,
         questions: { action: choice(
-          'Choose the complete available action that best pursues `objective` under the current `instructions`, known observations and memory, time, battery and cargo. Only delivered samples earn science credit. Properties are unknown until inspection. Explore to discover more, inspect to learn, collect to carry, return to deliver, recharge at base, or wait. Choose exactly one supplied candidate; do not infer hidden terrain or properties.',
+          'Choose the complete available action that best pursues `objective` under the current `instructions`, known observations and memory, time, battery and cargo. Only delivered samples earn science credit. Properties are unknown until inspection. Explore to discover more, inspect to learn, collect to carry, return to deliver, recharge at base, or wait. Known dust storms disclose their expiry and effects. Route estimates assume immediate departure; avoid-storm candidates take a longer known route around the region, and waiting consumes expedition time. Choose exactly one supplied candidate; do not infer hidden terrain or properties.',
           Object.fromEntries(input.candidates.map(candidate => [candidate.id, candidate])),
         ) },
       }, { signal: abort.signal, timeout: remaining, retry: { maxRetries: 0 } });

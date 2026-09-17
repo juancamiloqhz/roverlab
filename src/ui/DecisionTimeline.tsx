@@ -6,18 +6,18 @@ import { controllerLabels } from './controllerLabels';
 
 const seconds = (ms: number) => `${(ms / 1_000).toFixed(1)} s`;
 const actionName = (action: Action) => 'target' in action
-  ? `${action.kind} · ${action.target.label} (${action.target.position.x}, ${action.target.position.z})`
+  ? `${action.kind} · ${action.target.label} (${action.target.position.x}, ${action.target.position.z})${action.routeMode === 'avoid-storm' ? ' · Storm detour' : ''}`
   : `${action.kind} · ${seconds(action.durationMs)}`;
-const reasons = { start: 'Expedition started', 'action-completed': 'Action completed', 'instructions-changed': 'Instructions changed', 'new-observations': 'New observations', retry: 'Retry requested by mission control', 'controller-changed': 'Controller changed by mission control' };
+const reasons = { start: 'Expedition started', 'action-completed': 'Action completed', 'instructions-changed': 'Instructions changed', 'new-observations': 'New observations', 'storm-detected': 'Dust storm detected', 'storm-expired': 'Known dust storm expired', retry: 'Retry requested by mission control', 'controller-changed': 'Controller changed by mission control' };
 
 function ObservationTable({ title, observations }: { title: string; observations: Observation[] }) {
   return <div className="decision-table"><table aria-label={title}>
     <caption>{title} · {observations.length}</caption>
     <thead><tr><th>Observation</th><th>Position</th><th>Last seen</th><th>Known details</th></tr></thead>
     <tbody>{observations.map(item => <tr key={item.id}>
-      <td>{item.kind === 'terrain' ? item.id : item.kind === 'base' ? 'Base' : item.label}</td>
+      <td>{item.kind === 'terrain' ? item.id : item.kind === 'base' ? 'Base' : item.kind === 'dust-storm' ? 'Dust storm' : item.label}</td>
       <td>{item.position.x}, {item.position.z}</td><td>{seconds(item.observedAtMs)}</td>
-      <td>{item.kind === 'terrain' ? `${item.terrain} · ${item.blocked ? 'blocked' : 'traversable'}` : item.kind === 'base' ? 'Charging base' : <>
+      <td>{item.kind === 'terrain' ? `${item.terrain} · ${item.blocked ? 'blocked' : 'traversable'}` : item.kind === 'base' ? 'Charging base' : item.kind === 'dust-storm' ? `Radius ${item.radius} cells · ${seconds(item.remainingMs)} remaining · Sensor range ${item.sensorRange} · Movement energy ×${item.movementEnergyMultiplier}` : <>
         {item.status} · {item.properties?.join(' · ') ?? 'Properties unknown'}
         {item.inspectedAtMs !== undefined && ` · Inspected ${seconds(item.inspectedAtMs)}`}
       </>}</td>
@@ -46,7 +46,7 @@ function DecisionEntry({ decision }: { decision: Decision }) {
         <thead><tr><th>Candidate identity</th><th>Action and target</th><th>Known route estimate</th><th>Selection</th>{decision.probabilities && <th>Returned probability</th>}</tr></thead>
         <tbody>{input.candidates.map(candidate => <tr key={candidate.id}>
           <td>{candidate.id}</td><td>{actionName(candidate)}</td>
-          <td>{'target' in candidate ? `${candidate.routeEstimate.distanceCells} cells · ${seconds(candidate.routeEstimate.durationMs)} travel · ${candidate.routeEstimate.energy} energy` : 'No travel'}</td>
+          <td>{'target' in candidate ? `${candidate.routeEstimate.distanceCells} cells · ${seconds(candidate.routeEstimate.durationMs)} travel · ${candidate.routeEstimate.energy.toFixed(2)} energy${candidate.routeEstimate.stormDistanceCells !== undefined ? ` · ${candidate.routeEstimate.stormDistanceCells.toFixed(2)} cells in active storm` : ''}` : 'No travel'}</td>
           <td>{candidate.id === decision.selectedCandidateId ? 'Selected' : '—'}</td>
           {decision.probabilities && <td>{(decision.probabilities[candidate.id]! * 100).toFixed(2)}%</td>}
         </tr>)}</tbody>

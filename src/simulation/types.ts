@@ -7,6 +7,11 @@ export type ScienceRubric = Record<SampleClassification, number>;
 export type CargoSample = { sampleId: string; label: string };
 export type DeliveredSample = CargoSample & { classification: SampleClassification; score: number; deliveredAtMs: number };
 export type ExplorationTarget = { id: string; label: string; position: Position };
+export type DustStormConfiguration = {
+  position: Position; radius: number; durationMs: number; sensorRange: number; movementEnergyMultiplier: number;
+};
+export type DustStorm = Omit<DustStormConfiguration, 'durationMs'> & { id: string; expiresAtMs: number };
+export type StormObservation = DustStorm & { kind: 'dust-storm'; observedAtMs: number; remainingMs: number };
 export type Scenario = {
   id: string;
   name: string;
@@ -14,6 +19,7 @@ export type Scenario = {
   depth: number;
   base: Position;
   sensorRange: number;
+  dustStorm?: DustStormConfiguration;
   obstacles: Position[];
   roughTerrain: Position[];
   samples: {
@@ -30,9 +36,10 @@ export type SampleObservation = Observed & {
 };
 export type Observation = TerrainObservation
   | (Observed & { kind: 'base' })
-  | SampleObservation;
+  | SampleObservation | StormObservation;
 type TargetedAction<Kind> = {
-  kind: Kind; target: ExplorationTarget; routeEstimate: { distanceCells: number; durationMs: number; energy: number };
+  kind: Kind; target: ExplorationTarget; routeMode?: 'avoid-storm';
+  routeEstimate: { distanceCells: number; durationMs: number; energy: number; stormDistanceCells?: number };
 };
 export type Action =
   | TargetedAction<'explore'> | TargetedAction<'inspect'> | TargetedAction<'collect'> | TargetedAction<'return-to-base'>
@@ -44,7 +51,7 @@ export type ExpeditionController = {
   decide(input: ControllerInput, context: { signal: AbortSignal; reserveAttempt(): boolean }): string | Promise<string | DecisionOutcome>;
 };
 export type ControllerHistoryEntry = { controller: ExpeditionController['id']; atMs: number; firstDecisionId: number };
-export type DecisionReason = 'start' | 'action-completed' | 'instructions-changed' | 'new-observations' | 'retry' | 'controller-changed';
+export type DecisionReason = 'start' | 'action-completed' | 'instructions-changed' | 'new-observations' | 'storm-detected' | 'storm-expired' | 'retry' | 'controller-changed';
 export type Decision = {
   reason: DecisionReason;
   id: number; controller: ExpeditionController['id'];
@@ -78,12 +85,14 @@ export type ControllerInput = {
 export type PlaybackSpeed = 1 | 2 | 4;
 export type EndingCondition = 'timeout' | 'manual-stop' | 'stranded';
 export type ExpeditionCommand =
-  | { type: 'start' | 'pause' | 'resume' | 'reset' | 'stop' | 'retry-decision' | 'continue-with-baseline' }
+  | { type: 'start' | 'pause' | 'resume' | 'reset' | 'stop' | 'retry-decision' | 'continue-with-baseline' | 'introduce-storm' }
   | { type: 'set-instructions'; instructions: string }
   | { type: 'set-objective'; objective: ScientificObjective }
   | { type: 'set-controller'; controller: 'baseline' | 'typesafe' }
   | { type: 'set-speed'; speed: PlaybackSpeed };
 export type ExpeditionSnapshot = {
+  stormIntroduced: boolean;
+  stormAvailable: boolean;
   controller: ExpeditionController['id'];
   controllerHistory: ControllerHistoryEntry[];
   inferenceAttempts: number;
@@ -120,6 +129,10 @@ export type ExpeditionSnapshot = {
   memory: Observation[];
 };
 export type EventDetail =
+  | { type: 'storm-introduced'; storm: DustStorm }
+  | { type: 'storm-detected'; storm: StormObservation }
+  | { type: 'storm-expired'; stormId: string; detected: boolean }
+  | { type: 'storm-effects-changed'; sensorRange: number; movementEnergyMultiplier: number }
   | { type: 'controller-selected'; controller: ExpeditionController['id'] }
   | { type: 'controller-changed'; from: ExpeditionController['id']; to: ExpeditionController['id']; failure: DecisionFailure }
   | { type: 'inference-attempt'; decisionId: number; attempt: number; controller: ExpeditionController['id'] }

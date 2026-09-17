@@ -11,12 +11,15 @@ const observed = { id: identity, position, observedAtMs: number };
 const observation = z.discriminatedUnion('kind', [
   z.strictObject({ ...observed, kind: z.literal('terrain'), terrain: z.enum(['plain', 'rough']), blocked: z.boolean() }),
   z.strictObject({ ...observed, kind: z.literal('base') }),
+  z.strictObject({ ...observed, kind: z.literal('dust-storm'), radius: number.positive(), expiresAtMs: number,
+    remainingMs: number, sensorRange: number, movementEnergyMultiplier: number.min(1) }),
   z.strictObject({ ...observed, kind: z.literal('sample'), sampleId: identity, label: text,
     status: z.enum(['available', 'cargo', 'delivered']), properties: z.array(text).optional(), inspectedAtMs: number.optional() }),
 ]);
 const actionFields = {
   target: z.strictObject({ id: identity, label: text, position }),
-  routeEstimate: z.strictObject({ distanceCells: number, durationMs: number, energy: number }),
+  routeMode: z.literal('avoid-storm').optional(),
+  routeEstimate: z.strictObject({ distanceCells: number, durationMs: number, energy: number, stormDistanceCells: number.optional() }),
 };
 const action = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('explore'), ...actionFields }),

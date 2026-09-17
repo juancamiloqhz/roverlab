@@ -1,12 +1,13 @@
 import type { Scenario } from './types';
 
 export const authoredScenario: Scenario = {
-  id: 'ochre-basin-v3',
+  id: 'ochre-basin-v4',
   name: 'Ochre Basin',
   width: 21,
   depth: 19,
   base: { x: 3, z: 13 },
   sensorRange: 3,
+  dustStorm: { position: { x: 15, z: 13 }, radius: 4.5, durationMs: 45_000, sensorRange: 1.5, movementEnergyMultiplier: 3 },
   obstacles: [
     { x: 6, z: 10 }, { x: 6, z: 11 }, { x: 6, z: 12 },
     { x: 11, z: 5 }, { x: 11, z: 6 }, { x: 11, z: 7 }, { x: 12, z: 7 },
@@ -24,7 +25,7 @@ export const authoredScenario: Scenario = {
       properties: ['Layered sediment', 'Rounded grains deposited by flowing water'],
       classifications: { 'past-water': 'strong-evidence', 'unusual-minerals': 'unrelated' },
     },
-    // Tempting site beside the planned storm center (15, 13); the storm is ticket 08.
+    // Tempting site at the storm center; properties stay private until inspection.
     {
       id: 'b', label: 'Sample B', position: { x: 15, z: 13 },
       properties: ['Crystalline inclusions', 'Rare mineral intergrowths in dry volcanic rock'],

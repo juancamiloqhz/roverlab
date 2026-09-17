@@ -1,7 +1,8 @@
+import { knownStorm } from '../simulation/storm';
 import type { ActionCandidate, ControllerInput } from '../simulation/types';
 
 // The controller sees supplied candidates only; navigation stays in the simulation.
-export function chooseBaselineAction({ candidates, previousAction, cargo, cargoCapacity, battery, batteryCapacity }: ControllerInput): ActionCandidate {
+function chooseBaselinePriority({ candidates, previousAction, cargo, cargoCapacity, battery, batteryCapacity }: ControllerInput): ActionCandidate {
   const wait = candidates.find(action => action.kind === 'wait')!;
   const returnToBase = candidates.find(action => action.kind === 'return-to-base');
   const recharge = candidates.find(action => action.kind === 'recharge');
@@ -19,4 +20,19 @@ export function chooseBaselineAction({ candidates, previousAction, cargo, cargoC
   return candidates.filter(action => action.kind === 'explore')
     .sort((a, b) => a.routeEstimate.durationMs - b.routeEstimate.durationMs
       || b.target.position.x - a.target.position.x || a.target.position.z - b.target.position.z)[0] ?? wait;
+}
+
+
+export function chooseBaselineAction(input: ControllerInput): ActionCandidate {
+  const selected = chooseBaselinePriority(input);
+  if (!('target' in selected) || !(selected.routeEstimate.stormDistanceCells ?? 0)) return selected;
+  const detour = input.candidates.find(candidate => 'target' in candidate
+    && candidate.kind === selected.kind && candidate.target.id === selected.target.id && candidate.routeMode === 'avoid-storm');
+  if (detour && 'target' in detour && detour.routeEstimate.energy < selected.routeEstimate.energy
+    && detour.routeEstimate.durationMs < input.remainingMs) return detour;
+  const storm = knownStorm(input.memory);
+  if (storm && storm.remainingMs <= 10_000 && storm.remainingMs + selected.routeEstimate.durationMs < input.remainingMs) {
+    return input.candidates.find(candidate => candidate.kind === 'wait')!;
+  }
+  return selected;
 }

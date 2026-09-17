@@ -1,12 +1,13 @@
 import { Canvas } from '@react-three/fiber';
 import { Html, OrbitControls } from '@react-three/drei';
-import type { ExpeditionSnapshot } from '../simulation/types';
+import type { ExpeditionSnapshot, StormObservation } from '../simulation/types';
 import { Rover } from './Rover';
 
 function PlanetaryArea({ snapshot }: { snapshot: ExpeditionSnapshot }) {
   const currentIds = new Set(snapshot.observations.map(item => item.id));
   const terrain = snapshot.memory.filter(item => item.kind === 'terrain');
   const samples = snapshot.memory.filter(item => item.kind === 'sample').filter(sample => sample.status === 'available');
+  const storm = snapshot.memory.find((item): item is StormObservation => item.kind === 'dust-storm' && item.remainingMs > 0);
   const base = snapshot.memory.find(item => item.kind === 'base');
   return (
     <group>
@@ -34,6 +35,20 @@ function PlanetaryArea({ snapshot }: { snapshot: ExpeditionSnapshot }) {
           <Html position={[0, 0.7, 0]} center zIndexRange={[9, 0]}><span className={`scene-label sample-label ${current ? '' : 'remembered'}`}>{sample.label} · {current ? 'In range' : 'Remembered'}</span></Html>
         </group>;
       })}
+      {storm && <group position={[storm.position.x, 0, storm.position.z]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.065, 0]}>
+          <ringGeometry args={[storm.radius - 0.06, storm.radius, 64]} /><meshBasicMaterial color="#e8b869" transparent opacity={currentIds.has(storm.id) ? 0.9 : 0.45} />
+        </mesh>
+        <group rotation={[0, snapshot.elapsedMs / 6_000, 0]}>
+          {Array.from({ length: 12 }, (_, index) => {
+            const angle = index * Math.PI / 6;
+            return <mesh key={index} position={[Math.cos(angle) * storm.radius * 0.6, 0.6 + index % 3 * 0.3, Math.sin(angle) * storm.radius * 0.6]} scale={[1.4, 0.4, 0.8]}>
+              <sphereGeometry args={[storm.radius * 0.35, 12, 8]} /><meshStandardMaterial color="#d3a56b" transparent opacity={currentIds.has(storm.id) ? 0.14 : 0.05} depthWrite={false} roughness={1} />
+            </mesh>;
+          })}
+        </group>
+        <Html position={[0, 2.2, 0]} center zIndexRange={[8, 0]}><span className={`scene-label storm-label ${currentIds.has(storm.id) ? '' : 'remembered'}`}>Dust storm · {currentIds.has(storm.id) ? 'In range' : 'Remembered'}</span></Html>
+      </group>}
       {base && <group position={[base.position.x, 0.02, base.position.z]}>
         <mesh receiveShadow><cylinderGeometry args={[1.15, 1.2, 0.07, 32]} /><meshStandardMaterial color="#727c70" /></mesh>
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>

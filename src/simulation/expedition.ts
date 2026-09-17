@@ -1,10 +1,11 @@
 import { chooseBaselineAction } from '../controllers/baseline';
 import { INFERENCE_LIMIT, type DecisionOutcome } from '../../shared/decisions';
-import { findRoute, movementEnergy, positionKey, travelTimeMs } from './navigation';
+import { findRoute, movementEnergy, positionKey, travelCost, travelTimeMs } from './navigation';
 import { explorationCandidates, knownTerrain, observe, scienceCandidates } from './perception';
 import { authoredScenario } from './scenario';
+import { knownStorm } from './storm';
 import { scienceRubric } from './science';
-import type { Action, ActionCandidate, ControllerInput, Decision, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, Position, Scenario, ScientificObjective } from './types';
+import type { Action, ActionCandidate, ControllerInput, Decision, DustStorm, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, Position, Scenario, ScientificObjective } from './types';
 
 const STEP_MS = 100;
 const DURATION_MS = 300_000;
@@ -31,6 +32,8 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
   };
   const events: ExpeditionEvent[] = [];
   let expedition = 1;
+  let storm: DustStorm | null = null;
+  let movementEnergyMultiplier = 1;
   let state: ExpeditionSnapshot = initialState();
   let pendingMs = 0;
   let previousAction: Action | null = null;
@@ -40,6 +43,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
 
   function initialState(): ExpeditionSnapshot {
     return {
+      stormIntroduced: false, stormAvailable: !!scenario.dustStorm,
       controller: controller.id, inferenceAttempts: 0, inferenceLatencyMs: 0, decisionFailure: null,
       controllerHistory: [{ controller: controller.id, atMs: 0, firstDecisionId: 1 }],
       instructions, instructionsVersion: 0, decisionRevision: 0, reconsiderationReason: null, decisionPending: inFlight !== null,
@@ -60,14 +64,14 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
 
   function availableCandidates(): ActionCandidate[] {
     const candidates = [
-      ...explorationCandidates(state.memory, state.rover.position, state.area),
-      ...scienceCandidates(state.memory, state.rover.position, state.cargo, state.cargoCapacity),
+      ...explorationCandidates(state.memory, state.rover.position, state.area, state.elapsedMs),
+      ...scienceCandidates(state.memory, state.rover.position, state.cargo, state.cargoCapacity, state.elapsedMs),
     ].filter(action => state.battery > 0 || !('target' in action) || action.routeEstimate.distanceCells === 0);
     if (positionKey(state.rover.position) === positionKey(scenario.base) && state.battery < state.batteryCapacity) {
       candidates.push({ kind: 'recharge', durationMs: Math.ceil((state.batteryCapacity - state.battery) / RECHARGE_PER_SECOND * 1_000 / STEP_MS) * STEP_MS });
     }
     candidates.push({ kind: 'wait', durationMs: WAIT_MS });
-    return candidates.map(action => ({ ...action, id: `${action.kind}:${'target' in action ? action.target.id : action.durationMs}` }));
+    return candidates.map(action => ({ ...action, id: `${action.kind}:${'target' in action ? action.target.id + (action.routeMode ? ':avoid-storm' : '') : action.durationMs}` }));
   }
 
   function selectAction() {
@@ -164,7 +168,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     actionProgressMs = 0;
     route = [];
     if ('target' in action) {
-      route = findRoute(knownTerrain(state.memory), state.rover.position, action.target.position)!;
+      route = findRoute(knownTerrain(state.memory), state.rover.position, action.target.position, action.routeMode === 'avoid-storm' ? knownStorm(state.memory) : undefined)!;
       waypointStart = { ...state.rover.position };
     }
     record({ type: 'action-started', action, controller: controller.id });
@@ -200,12 +204,40 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
 
   function sense() {
     const memory = new Map(state.memory.map(observation => [observation.id, observation]));
-    state.observations = observe(scenario, state.rover.position, state.elapsedMs).flatMap(observation => {
+    if (storm && state.elapsedMs >= storm.expiresAtMs) {
+      const detected = memory.has(storm.id);
+      record({ type: 'storm-expired', stormId: storm.id, detected });
+      if (detected) state.reconsiderationReason = 'storm-expired';
+      storm = null;
+    }
+    // A disclosed expiry is predictable even out of range; do not refresh last-seen time.
+    for (const observation of memory.values()) {
+      if (observation.kind === 'dust-storm') observation.remainingMs = Math.max(0, observation.expiresAtMs - state.elapsedMs);
+    }
+    const distanceToStorm = storm ? Math.hypot(state.rover.position.x - storm.position.x, state.rover.position.z - storm.position.z) : Infinity;
+    const insideStorm = storm && distanceToStorm <= storm.radius;
+    const sensorRange = storm && insideStorm ? Math.min(scenario.sensorRange, storm.sensorRange) : scenario.sensorRange;
+    const multiplier = storm && insideStorm ? storm.movementEnergyMultiplier : 1;
+    if (sensorRange !== state.sensorRange || multiplier !== movementEnergyMultiplier) {
+      record({ type: 'storm-effects-changed', sensorRange, movementEnergyMultiplier: multiplier });
+    }
+    state.sensorRange = sensorRange;
+    movementEnergyMultiplier = multiplier;
+    state.observations = observe(scenario, state.rover.position, state.elapsedMs, state.sensorRange).flatMap(observation => {
       const remembered = memory.get(observation.id);
       if (observation.kind !== 'sample' || remembered?.kind !== 'sample') return [observation];
       if (remembered.status !== 'available') return [];
       return [{ ...remembered, observedAtMs: observation.observedAtMs }];
     });
+    if (storm && distanceToStorm <= storm.radius + state.sensorRange) {
+      const observation = { ...storm, kind: 'dust-storm' as const, observedAtMs: state.elapsedMs, remainingMs: storm.expiresAtMs - state.elapsedMs };
+      state.observations.push(observation);
+      if (!memory.has(storm.id)) {
+        record({ type: 'storm-detected', storm: observation });
+        invalidateDecision();
+        state.reconsiderationReason = 'storm-detected';
+      }
+    }
     const discoveries = state.observations.filter(observation => !memory.has(observation.id));
     for (const observation of state.observations) memory.set(observation.id, observation);
     state.memory = [...memory.values()];
@@ -286,16 +318,28 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       if (waypoint) {
         const cell = knownTerrain(state.memory).find(item => positionKey(item.position) === positionKey(waypoint))!;
         const cellTravelMs = travelTimeMs(cell.terrain);
-        const consumed = Math.min(state.battery, movementEnergy(cell.terrain) * STEP_MS / cellTravelMs);
-        const movementMs = consumed / movementEnergy(cell.terrain) * cellTravelMs;
+        const start = state.rover.position;
+        const positionAfter = (movementMs: number) => ({
+          x: waypointStart.x + (waypoint.x - waypointStart.x) * (actionProgressMs - STEP_MS + movementMs) / cellTravelMs,
+          z: waypointStart.z + (waypoint.z - waypointStart.z) * (actionProgressMs - STEP_MS + movementMs) / cellTravelMs,
+        });
+        const energyFor = (movementMs: number) => travelCost(start, positionAfter(movementMs), cell.terrain, state.elapsedMs - STEP_MS, storm).energy;
+        let movementMs = STEP_MS;
+        const consumed = Math.min(state.battery, roundEnergy(energyFor(STEP_MS)));
+        if (consumed < roundEnergy(energyFor(STEP_MS))) {
+          // Solve distance at depletion, including a storm boundary within this step.
+          let low = 0, high = STEP_MS;
+          for (let iteration = 0; iteration < 40; iteration++) {
+            const middle = (low + high) / 2;
+            if (energyFor(middle) <= consumed) low = middle;
+            else high = middle;
+          }
+          movementMs = low;
+        }
+        state.rover.position = positionAfter(movementMs);
         actionProgressMs -= STEP_MS - movementMs;
-        const fraction = actionProgressMs / cellTravelMs;
-        state.rover.position = {
-          x: waypointStart.x + (waypoint.x - waypointStart.x) * fraction,
-          z: waypointStart.z + (waypoint.z - waypointStart.z) * fraction,
-        };
         state.rover.heading = Math.atan2(waypoint.x - waypointStart.x, waypoint.z - waypointStart.z);
-        state.rover.distance += consumed / movementEnergy(cell.terrain);
+        state.rover.distance += movementMs / cellTravelMs;
         state.battery = roundEnergy(state.battery - consumed);
         state.energyUsed = roundEnergy(state.energyUsed + consumed);
         record({ type: 'energy-changed', source: 'movement', battery: state.battery, energyUsed: state.energyUsed });
@@ -345,7 +389,15 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       discoveryCount: state.discoveryCount, inspectionCount: state.inspectionCount,
     } }),
     dispatch(command: ExpeditionCommand) {
-      if (command.type === 'set-instructions' && state.status !== 'ended' && command.instructions !== instructions) {
+      if (command.type === 'introduce-storm' && scenario.dustStorm && !state.stormIntroduced && state.status !== 'ended') {
+        const { durationMs, ...configuration } = scenario.dustStorm;
+        storm = { ...structuredClone(configuration), id: 'dust-storm', expiresAtMs: state.elapsedMs + durationMs };
+        state.stormIntroduced = true;
+        record({ type: 'storm-introduced', storm });
+        sense();
+        reconsiderAtWaypoint();
+        selectAction();
+      } else if (command.type === 'set-instructions' && state.status !== 'ended' && command.instructions !== instructions) {
         instructions = command.instructions;
         state.instructions = instructions;
         state.instructionsVersion++;
@@ -398,6 +450,8 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
         if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: controller.id });
         expedition++;
         decisions = [];
+        storm = null;
+        movementEnergyMultiplier = 1;
         state = initialState();
         pendingMs = 0;
         previousAction = null;

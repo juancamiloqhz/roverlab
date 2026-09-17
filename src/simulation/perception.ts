@@ -1,9 +1,10 @@
-import { findRoute, movementEnergy, neighbors, positionKey, travelTimeMs } from './navigation';
-import type { Action, CargoSample, Observation, Position, Scenario, TerrainObservation } from './types';
+import { findRoute, neighbors, positionKey, travelCost } from './navigation';
+import { knownStorm } from './storm';
+import type { Action, DustStorm, CargoSample, Observation, Position, Scenario, TerrainObservation } from './types';
 
 // Explicitly project sensed facts; sample properties and world metadata never cross this boundary.
-export function observe(scenario: Scenario, position: Position, atMs: number): Observation[] {
-  const inRange = (other: Position) => Math.hypot(other.x - position.x, other.z - position.z) <= scenario.sensorRange;
+export function observe(scenario: Scenario, position: Position, atMs: number, sensorRange = scenario.sensorRange): Observation[] {
+  const inRange = (other: Position) => Math.hypot(other.x - position.x, other.z - position.z) <= sensorRange;
   const blocked = new Set(scenario.obstacles.map(positionKey));
   const rough = new Set(scenario.roughTerrain.map(positionKey));
   const observations: Observation[] = [];
@@ -27,24 +28,24 @@ export function observe(scenario: Scenario, position: Position, atMs: number): O
   return observations;
 }
 
-export function scienceCandidates(memory: Observation[], position: Position, cargo: CargoSample[], cargoCapacity: number): Action[] {
+export function scienceCandidates(memory: Observation[], position: Position, cargo: CargoSample[], cargoCapacity: number, atMs: number): Action[] {
   const terrain = knownTerrain(memory);
   const cells = new Map(terrain.map(cell => [positionKey(cell.position), cell]));
   const candidates: Action[] = [];
   for (const item of memory) {
-    if (item.kind === 'terrain' || (item.kind === 'sample' && item.status !== 'available')) continue;
+    if ((item.kind !== 'base' && item.kind !== 'sample') || (item.kind === 'sample' && item.status !== 'available')) continue;
     if (item.kind === 'base' && positionKey(item.position) === positionKey(position) && !cargo.length) continue;
-    const route = findRoute(terrain, position, item.position);
-    if (!route) continue;
+
     const target = {
       id: item.kind === 'sample' ? item.sampleId : item.id,
       label: item.kind === 'sample' ? item.label : 'Base', position: { ...item.position },
     };
-    const routeEstimate = estimateRoute(route, cells);
-    if (item.kind === 'base') candidates.push({ kind: 'return-to-base', target, routeEstimate });
-    else {
-      if (!item.properties) candidates.push({ kind: 'inspect', target, routeEstimate });
-      if (cargo.length < cargoCapacity) candidates.push({ kind: 'collect', target, routeEstimate });
+    for (const choice of routeChoices(terrain, cells, position, item.position, atMs, knownStorm(memory))) {
+      if (item.kind === 'base') candidates.push({ kind: 'return-to-base', target, ...choice });
+      else {
+        if (!item.properties) candidates.push({ kind: 'inspect', target, ...choice });
+        if (cargo.length < cargoCapacity) candidates.push({ kind: 'collect', target, ...choice });
+      }
     }
   }
   return candidates;
@@ -54,16 +55,33 @@ export function knownTerrain(memory: Observation[]): TerrainObservation[] {
   return memory.filter(observation => observation.kind === 'terrain');
 }
 
-function estimateRoute(route: Position[], cells: Map<string, TerrainObservation>) {
-  return {
-    distanceCells: route.length,
-    energy: route.reduce((energy, step) => energy + movementEnergy(cells.get(positionKey(step))!.terrain), 0),
-    durationMs: route.reduce((duration, step) => duration + travelTimeMs(cells.get(positionKey(step))!.terrain), 0),
-  };
+function estimateRoute(route: Position[], cells: Map<string, TerrainObservation>, start: Position, atMs: number, storm?: DustStorm) {
+  let position = start;
+  const estimate = { distanceCells: route.length, energy: 0, durationMs: 0, ...(storm ? { stormDistanceCells: 0 } : {}) };
+  for (const step of route) {
+    const cost = travelCost(position, step, cells.get(positionKey(step))!.terrain, atMs + estimate.durationMs, storm);
+    estimate.energy += cost.energy;
+    if (estimate.stormDistanceCells !== undefined) estimate.stormDistanceCells += cost.stormDistanceCells;
+    estimate.durationMs += cost.durationMs;
+    position = step;
+  }
+  return estimate;
+}
+
+function routeChoices(terrain: TerrainObservation[], cells: Map<string, TerrainObservation>, start: Position, target: Position, atMs: number, storm?: DustStorm) {
+  const route = findRoute(terrain, start, target);
+  if (!route) return [];
+  const routeEstimate = estimateRoute(route, cells, start, atMs, storm);
+  const choices: { routeEstimate: typeof routeEstimate; routeMode?: 'avoid-storm' }[] = [{ routeEstimate }];
+  if (storm && (routeEstimate.stormDistanceCells ?? 0) > 0) {
+    const detour = findRoute(terrain, start, target, storm);
+    if (detour) choices.push({ routeMode: 'avoid-storm', routeEstimate: estimateRoute(detour, cells, start, atMs, storm) });
+  }
+  return choices;
 }
 
 export function explorationCandidates(
-  memory: Observation[], position: Position, area: { width: number; depth: number },
+  memory: Observation[], position: Position, area: { width: number; depth: number }, atMs: number,
 ): Action[] {
   const terrain = knownTerrain(memory);
   const cells = new Map(terrain.map(cell => [positionKey(cell.position), cell]));
@@ -73,13 +91,13 @@ export function explorationCandidates(
     const bordersUnknown = neighbors(cell.position).some(next =>
       next.x >= 0 && next.z >= 0 && next.x < area.width && next.z < area.depth && !cells.has(positionKey(next)));
     if (!bordersUnknown) continue;
-    const route = findRoute(terrain, position, cell.position);
-    if (!route) continue;
-    candidates.push({
-      kind: 'explore',
-      target: { id: `frontier:${positionKey(cell.position)}`, label: `Frontier ${cell.position.x} / ${cell.position.z}`, position: { ...cell.position } },
-      routeEstimate: estimateRoute(route, cells),
-    });
+    for (const choice of routeChoices(terrain, cells, position, cell.position, atMs, knownStorm(memory))) {
+      candidates.push({
+        kind: 'explore',
+        target: { id: `frontier:${positionKey(cell.position)}`, label: `Frontier ${cell.position.x} / ${cell.position.z}`, position: { ...cell.position } },
+        ...choice,
+      });
+    }
   }
   return candidates;
 }

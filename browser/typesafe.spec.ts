@@ -10,6 +10,9 @@ test('TypeSafe pending decisions keep the camera and controls responsive and sho
   await expect(page.getByRole('combobox', { name: 'Expedition controller' })).toBeDisabled();
   await expect(page.getByLabel('Current action')).toHaveText('Awaiting decision');
   const scene = page.getByRole('region', { name: 'Planetary scene' });
+  await page.getByRole('button', { name: 'Introduce dust storm' }).click();
+  await expect(page.getByRole('region', { name: 'Dust storm controls' })).toContainText('The rover has not detected it');
+  await expect(scene.getByText(/Dust storm/)).toHaveCount(0);
   const before = await scene.screenshot();
   const box = (await scene.locator('canvas').boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

@@ -131,3 +131,8 @@ footer { display: flex; justify-content: space-between; gap: 20px; border-top: 1
 .recovery-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .controller-transition { padding: 14px 4px; color: #d5e7c9; font-size: 12px; line-height: 1.6; }
 .controller-transition p { margin: 4px 0 0; color: #aec4af; }
+
+.storm-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; margin-top: 16px; padding: 20px; border: 1px solid #685a3e; border-radius: 8px; background: #292e24; }
+.storm-control h3 { margin: 6px 0 0; font-size: 15px; color: #e8c791; }
+.storm-control p { flex-basis: 100%; margin: 0; font-size: 12px; line-height: 1.6; color: #bec6b4; }
+.storm-label { background: #5f421ee8; color: #ffe3ad; }

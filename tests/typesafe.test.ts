@@ -492,3 +492,31 @@ test.each(['retry-decision', 'continue-with-baseline', 'reset', 'stop'] as const
     expedition.dispatch({ type: 'stop' });
   },
 );
+
+
+test('the real TypeSafe contract accepts discovered storms and selects a complete detour candidate', async () => {
+  const requests: ControllerInput[] = [];
+  const { expedition } = expeditionWithService(async (_url, init) => {
+    const input: ControllerInput = JSON.parse(init!.body as string).state;
+    requests.push(input);
+    const detour = input.candidates.find(candidate => candidate.kind === 'inspect' && candidate.routeMode === 'avoid-storm');
+    return success(input, detour?.id ?? 'wait:5000');
+  }, { scenario: {
+    id: 'typesafe-storm', name: 'TypeSafe storm', width: 5, depth: 3, base: { x: 0, z: 1 }, sensorRange: 5,
+    obstacles: [], roughTerrain: [],
+    dustStorm: { position: { x: 2, z: 1 }, radius: 0.5, durationMs: 90_000, sensorRange: 0.5, movementEnergyMultiplier: 5 },
+    samples: [{ id: 'a', label: 'Sample A', position: { x: 4, z: 1 }, properties: ['Private mineral'],
+      classifications: { 'past-water': 'unrelated', 'unusual-minerals': 'strong-evidence' } }],
+  } });
+  expedition.dispatch({ type: 'introduce-storm' });
+  expedition.dispatch({ type: 'start' });
+  await settled(expedition);
+  expect(expedition.getSnapshot()).toMatchObject({ decisionFailure: null, inferenceAttempts: 1,
+    currentAction: { kind: 'inspect', routeMode: 'avoid-storm', routeEstimate: { energy: 12 } } });
+  expect(requests[0]!.observations.find(item => item.kind === 'dust-storm')).toMatchObject({ radius: 0.5, remainingMs: 90_000 });
+  expect(JSON.stringify(requests)).not.toContain('Private mineral');
+  expect(JSON.stringify(requests)).not.toContain('classifications');
+  expect(expedition.getDecisions()[0]!.probabilities!['inspect:a:avoid-storm']).toBeGreaterThan(0);
+  expedition.advanceWallTime(24_000);
+  expect(expedition.getSnapshot()).toMatchObject({ energyUsed: 12, rover: { position: { x: 4, z: 1 } } });
+});

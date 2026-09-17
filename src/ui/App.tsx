@@ -3,6 +3,7 @@ import { ExpeditionScene } from '../scene/ExpeditionScene';
 import { scientificObjectives } from '../simulation/science';
 import type { Action, ExpeditionSnapshot, ScientificObjective } from '../simulation/types';
 import { DecisionTimeline } from './DecisionTimeline';
+import { StormControl } from './StormControl';
 import { MissionInstructions } from './MissionInstructions';
 import { useExpedition } from './useExpedition';
 import './styles.css';
@@ -93,6 +94,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
               </>}
             </section>}
             <p className="world-note"><span aria-hidden="true">↳</span> You set the pace. The rover chooses its own targets and routes.</p>
+            <StormControl snapshot={snapshot} dispatch={dispatch} />
             <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} />
           </div>
           <aside className="telemetry" aria-label="Expedition telemetry">
@@ -122,7 +124,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
               <div className="telemetry-row"><span>Energy used</span><strong aria-label="Energy used">{snapshot.energyUsed.toFixed(1)} units</strong></div>
               <p className="memory-note">Movement uses energy; rough terrain costs more. Recharge at base uses expedition time.</p>
             </section>
-            <div className="action-block"><span className="field-label">CURRENT ACTION</span><strong aria-label="Current action">{actionLabel}</strong><p>{actionDescription}</p></div>
+            <div className="action-block"><span className="field-label">CURRENT ACTION</span><strong aria-label="Current action">{actionLabel}</strong><p>{actionDescription}{currentAction && 'target' in currentAction && currentAction.routeMode === 'avoid-storm' && ' Taking a known route around the dust storm.'}</p></div>
             <div className="telemetry-row"><span>Rover coordinates</span><strong aria-label="Rover coordinates">{rover.position.x.toFixed(2)} / {rover.position.z.toFixed(2)}</strong></div>
             <div className="telemetry-row"><span>Distance traveled</span><strong>{rover.distance.toFixed(1)} <span>cells</span></strong></div>
             <section className="science-block" aria-label="Science progress">
