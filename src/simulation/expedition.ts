@@ -41,6 +41,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
   function initialState(): ExpeditionSnapshot {
     return {
       controller: controller.id, inferenceAttempts: 0, inferenceLatencyMs: 0, decisionFailure: null,
+      controllerHistory: [{ controller: controller.id, atMs: 0, firstDecisionId: 1 }],
       instructions, instructionsVersion: 0, decisionRevision: 0, reconsiderationReason: null, decisionPending: inFlight !== null,
       battery: 100, batteryCapacity: 100, energyUsed: 0,
       objective, rubric: structuredClone(scienceRubric), cargo: [], cargoCapacity: 2,
@@ -176,6 +177,14 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       record({ type: 'decision-discarded', decisionId: inFlight.decision.id });
       inFlight.abort.abort();
     }
+  }
+
+  function resumeAfterDecisionFailure(reason: 'retry' | 'controller-changed') {
+    state.decisionFailure = null;
+    state.status = 'running';
+    state.reconsiderationReason = reason;
+    record({ type: 'resumed' });
+    selectAction();
   }
 
   function reconsiderAtWaypoint() {
@@ -331,7 +340,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       return () => { decisionListeners.delete(listener); };
     },
     getRecord: () => structuredClone({ startingConditions, events, results: {
-      controller: state.controller, inferenceAttempts: state.inferenceAttempts, inferenceLatencyMs: state.inferenceLatencyMs,
+      controller: state.controller, controllerHistory: state.controllerHistory, inferenceAttempts: state.inferenceAttempts, inferenceLatencyMs: state.inferenceLatencyMs,
       endingCondition: state.endingCondition, scienceScore: state.scienceScore, energyUsed: state.energyUsed,
       discoveryCount: state.discoveryCount, inspectionCount: state.inspectionCount,
     } }),
@@ -350,6 +359,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
         if (next && next.id !== controller.id) {
           controller = next;
           state.controller = controller.id;
+          state.controllerHistory = [{ controller: controller.id, atMs: 0, firstDecisionId: 1 }];
           record({ type: 'controller-selected', controller: controller.id });
         }
       } else if (command.type === 'set-objective' && state.status === 'ready' && command.objective !== state.objective) {
@@ -364,6 +374,16 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       } else if (command.type === 'pause' && state.status === 'running') {
         state.status = 'paused';
         record({ type: 'paused' });
+      } else if (command.type === 'retry-decision' && state.status === 'paused' && state.decisionFailure
+        && controller.id === 'typesafe' && !inFlight && state.inferenceAttempts < INFERENCE_LIMIT) {
+        resumeAfterDecisionFailure('retry');
+      } else if (command.type === 'continue-with-baseline' && state.status === 'paused' && state.decisionFailure
+        && controller.id === 'typesafe' && !inFlight) {
+        record({ type: 'controller-changed', from: controller.id, to: baseline.id, failure: state.decisionFailure });
+        controller = baseline;
+        state.controller = controller.id;
+        state.controllerHistory.push({ controller: controller.id, atMs: state.elapsedMs, firstDecisionId: decisions.length + 1 });
+        resumeAfterDecisionFailure('controller-changed');
       } else if (command.type === 'resume' && state.status === 'paused' && !state.decisionFailure) {
         state.status = 'running';
         record({ type: 'resumed' });

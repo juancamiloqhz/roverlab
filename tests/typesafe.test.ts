@@ -328,3 +328,167 @@ test('a successful response arriving after the deadline is rejected even before 
   expect(expedition.getSnapshot().decisionFailure).toBe('deadline');
   expect(expedition.getSnapshot().currentAction).toBeNull();
 });
+
+test('mission control retries a failed decision with current instructions and the existing attempt budget', async () => {
+  const clock = manualClock();
+  const inputs: ControllerInput[] = [];
+  let release!: () => void;
+  const { expedition } = expeditionWithService((_url, init) => {
+    const input = JSON.parse(init!.body as string).state as ControllerInput;
+    inputs.push(input);
+    if (inputs.length <= 2) return Promise.resolve(new Response('temporary', { status: 503 }));
+    return new Promise(resolve => { release = () => resolve(success(input)); });
+  }, { clock });
+  expedition.dispatch({ type: 'start' });
+  await settled(expedition);
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', decisionFailure: 'unavailable', inferenceAttempts: 2 });
+  const failed = expedition.getSnapshot();
+  clock.advance(6_000);
+  expedition.advanceWallTime(6_000);
+  expect(expedition.getSnapshot()).toEqual(failed);
+  expedition.dispatch({ type: 'set-instructions', instructions: 'Use the updated mission priorities.' });
+  expedition.dispatch({ type: 'retry-decision' });
+  expect(expedition.getSnapshot()).toMatchObject({ decisionPending: true, decisionFailure: null });
+  expedition.dispatch({ type: 'retry-decision' });
+  await flush();
+  expect(inputs).toHaveLength(3);
+  expect(inputs[2]).toMatchObject({ instructions: 'Use the updated mission priorities.', instructionsVersion: 1 });
+  const pending = expedition.getSnapshot();
+  clock.advance(4_999);
+  expedition.advanceWallTime(4_999);
+  expect(expedition.getSnapshot()).toEqual(pending);
+  release();
+  await settled(expedition);
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'running', controller: 'typesafe', inferenceAttempts: 3, currentAction: { kind: 'wait' }, elapsedMs: 0, battery: 100 });
+  expect(expedition.getDecisions().map(decision => [decision.reason, decision.status, decision.inferenceAttempts])).toEqual([
+    ['start', 'failed', 2], ['retry', 'applied', 1],
+  ]);
+  expedition.advanceWallTime(1_000);
+  expect(expedition.getSnapshot().elapsedMs).toBe(1_000);
+});
+
+test('explicit baseline continuation preserves cargo, earned science and resources, and records both controllers', async () => {
+  const scenario: Scenario = {
+    id: 'recovery-corridor', name: 'Recovery corridor', width: 3, depth: 1,
+    base: { x: 0, z: 0 }, sensorRange: 3, obstacles: [], roughTerrain: [],
+    samples: [
+      { id: 'a', label: 'Sample A', position: { x: 1, z: 0 }, properties: ['Layered sediment'],
+        classifications: { 'past-water': 'strong-evidence', 'unusual-minerals': 'unrelated' } },
+      { id: 'b', label: 'Sample B', position: { x: 2, z: 0 }, properties: ['Hydrated minerals'],
+        classifications: { 'past-water': 'suggestive', 'unusual-minerals': 'strong-evidence' } },
+    ],
+  };
+  const { expedition } = expeditionWithService(async (_url, init) => {
+    const input = JSON.parse(init!.body as string).state as ControllerInput;
+    if (input.cargo.some(sample => sample.sampleId === 'b')) return success(input, 'invented');
+    const action = input.cargo.length ? input.candidates.find(action => action.kind === 'return-to-base')! : chooseBaselineAction(input);
+    return success(input, action.id);
+  }, { scenario });
+  expedition.dispatch({ type: 'set-instructions', instructions: 'Bring back evidence of water.' });
+  expedition.dispatch({ type: 'start' });
+  while (expedition.getSnapshot().status === 'running' && expedition.getSnapshot().elapsedMs < 40_000) {
+    if (expedition.getSnapshot().decisionPending) await settled(expedition);
+    expedition.advanceWallTime(100);
+  }
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', controller: 'typesafe', cargo: [{ sampleId: 'b' }], scienceScore: 10, energyUsed: 8, battery: 92, elapsedMs: 36_000 });
+  const failed = expedition.getSnapshot();
+  expedition.dispatch({ type: 'set-controller', controller: 'baseline' });
+  expedition.dispatch({ type: 'resume' });
+  expedition.advanceWallTime(10_000);
+  expect(expedition.getSnapshot()).toEqual(failed);
+  expedition.dispatch({ type: 'continue-with-baseline' });
+  expect(expedition.getSnapshot().controller).toBe('baseline');
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'running', decisionFailure: null, currentAction: { kind: 'return-to-base' } });
+  for (const field of ['objective', 'rubric', 'elapsedMs', 'remainingMs', 'cargo', 'energyUsed', 'battery', 'rover', 'scienceScore', 'deliveredSamples', 'instructions', 'instructionsVersion', 'memory', 'observations', 'inferenceAttempts', 'inferenceLatencyMs'] as const) {
+    expect(expedition.getSnapshot()[field]).toEqual(failed[field]);
+  }
+  expect(expedition.getSnapshot().controllerHistory).toEqual([
+    { controller: 'typesafe', atMs: 0, firstDecisionId: 1 },
+    { controller: 'baseline', atMs: 36_000, firstDecisionId: 7 },
+  ]);
+  expect(expedition.getDecisions().at(-1)).toMatchObject({ controller: 'baseline', reason: 'controller-changed', status: 'applied', inferenceAttempts: 0 });
+  expedition.dispatch({ type: 'continue-with-baseline' });
+  expedition.dispatch({ type: 'retry-decision' });
+  expedition.advanceWallTime(8_000);
+  expedition.dispatch({ type: 'stop' });
+  expect(expedition.getSnapshot()).toMatchObject({ cargo: [], scienceScore: 15, elapsedMs: 44_000 });
+  expect(expedition.getRecord().results.controllerHistory).toEqual(expedition.getSnapshot().controllerHistory);
+  const transitions = expedition.getRecord().events.filter(event => event.type === 'controller-changed');
+  expect(transitions).toMatchObject([{ from: 'typesafe', to: 'baseline', failure: 'invalid-output', atMs: 36_000, expedition: 1 }]);
+  expect(transitions).toHaveLength(1);
+  expect(expedition.getRecord().events.filter(event => event.type === 'action-completed').at(-1)).toMatchObject({ controller: 'baseline', action: { kind: 'return-to-base' } });
+  expedition.dispatch({ type: 'reset' });
+  expect(expedition.getSnapshot().controllerHistory).toEqual([{ controller: 'baseline', atMs: 0, firstDecisionId: 1 }]);
+});
+
+test.each([false, true])('repeated recovery failures reach attempt 99 and manual retry obeys the cap (last attempt fails: %s)', async failLast => {
+  let attempts = 0;
+  const { expedition } = expeditionWithService(async (_url, init) => {
+    attempts++;
+    const input = JSON.parse(init!.body as string).state as ControllerInput;
+    if (attempts === 1) return success(input, 'invented');
+    if (attempts === 100 && !failLast) return success(input);
+    return new Response('temporary', { status: 503 });
+  });
+  expedition.dispatch({ type: 'start' });
+  await settled(expedition);
+  for (let retry = 0; retry < 49; retry++) {
+    expedition.dispatch({ type: 'retry-decision' });
+    expect(expedition.getSnapshot().decisionPending).toBe(true);
+    await settled(expedition);
+    expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', controller: 'typesafe', currentAction: null, elapsedMs: 0, inferenceAttempts: 3 + retry * 2 });
+  }
+  expect(attempts).toBe(99);
+  expedition.dispatch({ type: 'retry-decision' });
+  await settled(expedition);
+  if (!failLast) {
+    expect(expedition.getSnapshot().currentAction?.kind).toBe('wait');
+    expedition.advanceWallTime(5_000);
+    await settled(expedition);
+  }
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', decisionFailure: 'budget', inferenceAttempts: 100 });
+  const exhausted = expedition.getSnapshot();
+  expedition.dispatch({ type: 'retry-decision' });
+  expedition.dispatch({ type: 'resume' });
+  await flush();
+  expect(expedition.getSnapshot()).toEqual(exhausted);
+  expect(attempts).toBe(100);
+  expect(expedition.getRecord().events.filter(event => event.type === 'inference-attempt')).toHaveLength(100);
+  expedition.dispatch({ type: 'continue-with-baseline' });
+  expect(expedition.getSnapshot()).toMatchObject({ controller: 'baseline', status: 'running', inferenceAttempts: 100 });
+  expedition.dispatch({ type: 'stop' });
+  expect(expedition.getSnapshot().endingCondition).toBe('manual-stop');
+  expedition.dispatch({ type: 'reset' });
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'ready', inferenceAttempts: 0, decisionFailure: null });
+});
+
+test.each(['retry-decision', 'continue-with-baseline', 'reset', 'stop'] as const)(
+  'late output from a timed-out operation cannot execute after %s', async command => {
+    const clock = manualClock();
+    const pending: { input: ControllerInput; signal: AbortSignal; resolve: (response: Response) => void }[] = [];
+    const { expedition } = expeditionWithService((_url, init) => new Promise(resolve => {
+      pending.push({ input: JSON.parse(init!.body as string).state, signal: init!.signal!, resolve });
+    }), { clock });
+    expedition.dispatch({ type: 'start' });
+    await flush();
+    clock.advance(5_000);
+    await flush();
+    expect(expedition.getSnapshot().decisionFailure).toBe('deadline');
+    expect(pending[0]!.signal.aborted).toBe(true);
+    expedition.dispatch({ type: command });
+    if (command === 'reset') expedition.dispatch({ type: 'start' });
+    await flush();
+    const recovered = expedition.getSnapshot();
+    pending[0]!.resolve(success(pending[0]!.input, pending[0]!.input.candidates[0]!.id));
+    await flush();
+    expect(expedition.getSnapshot()).toEqual(recovered);
+    expect(expedition.getRecord().events.filter(event => event.type === 'decision-made' && event.controller === 'typesafe')).toHaveLength(0);
+    if (command === 'retry-decision' || command === 'reset') {
+      expect(pending).toHaveLength(2);
+      pending[1]!.resolve(success(pending[1]!.input));
+      await settled(expedition);
+      expect(expedition.getSnapshot()).toMatchObject({ controller: 'typesafe', currentAction: { kind: 'wait' }, inferenceAttempts: command === 'reset' ? 1 : 2 });
+    } else expect(pending).toHaveLength(1);
+    expedition.dispatch({ type: 'stop' });
+  },
+);

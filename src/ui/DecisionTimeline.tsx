@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { scientificObjectives } from '../simulation/science';
-import type { Action, Decision, Observation } from '../simulation/types';
+import type { Action, ControllerHistoryEntry, Decision, Observation } from '../simulation/types';
 import { failureMessages } from '../../shared/decisions';
 import { controllerLabels } from './controllerLabels';
 
@@ -8,7 +8,7 @@ const seconds = (ms: number) => `${(ms / 1_000).toFixed(1)} s`;
 const actionName = (action: Action) => 'target' in action
   ? `${action.kind} · ${action.target.label} (${action.target.position.x}, ${action.target.position.z})`
   : `${action.kind} · ${seconds(action.durationMs)}`;
-const reasons = { start: 'Expedition started', 'action-completed': 'Action completed', 'instructions-changed': 'Instructions changed', 'new-observations': 'New observations' };
+const reasons = { start: 'Expedition started', 'action-completed': 'Action completed', 'instructions-changed': 'Instructions changed', 'new-observations': 'New observations', retry: 'Retry requested by mission control', 'controller-changed': 'Controller changed by mission control' };
 
 function ObservationTable({ title, observations }: { title: string; observations: Observation[] }) {
   return <div className="decision-table"><table aria-label={title}>
@@ -29,7 +29,7 @@ function DecisionEntry({ decision }: { decision: Decision }) {
   const [open, setOpen] = useState(false);
   const { input } = decision;
   return <li><details onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary>Decision {decision.id} · {seconds(input.atMs)} <span>{decision.action ? actionName(decision.action) : decision.status}</span></summary>
+    <summary>Decision {decision.id} · {seconds(input.atMs)} · {controllerLabels[decision.controller]} <span>{decision.action ? actionName(decision.action) : decision.status}</span></summary>
     {open && <div className="decision-details" aria-label={`Decision ${decision.id} details`}>
       <p><strong>{controllerLabels[decision.controller]}</strong> · {reasons[decision.reason]} · {decision.status}</p>
       {decision.failure && <p>{failureMessages[decision.failure]}</p>}
@@ -57,11 +57,21 @@ function DecisionEntry({ decision }: { decision: Decision }) {
   </details></li>;
 }
 
-export function DecisionTimeline({ decisions }: { decisions: Decision[] }) {
+export function DecisionTimeline({ decisions, controllerHistory }: { decisions: Decision[]; controllerHistory: ControllerHistoryEntry[] }) {
   return <section className="decision-timeline" aria-label="Decision timeline">
     <h3>Decision timeline <span>{decisions.length}</span></h3>
     <p className="memory-note">Baseline decisions use fixed rules. No model probabilities or reasoning are produced for baseline decisions. TypeSafe probabilities compare the offered choices; they are not utility, science score, a guarantee of correctness, or generated reasoning. A valid uncertain choice continues autonomously.</p>
-    {decisions.length ? <ol>{decisions.map(decision => <DecisionEntry key={decision.id} decision={decision} />)}</ol>
+    {decisions.length ? <ol>{decisions.map(decision => {
+      const transitionIndex = controllerHistory.findIndex(entry => entry.firstDecisionId === decision.id);
+      const transition = transitionIndex > 0 ? controllerHistory[transitionIndex] : undefined;
+      return <Fragment key={decision.id}>
+        {transition && <li className="controller-transition">
+          <strong>{controllerLabels[controllerHistory[transitionIndex - 1]!.controller]} → {controllerLabels[transition.controller]}</strong>
+          <p>{seconds(transition.atMs)} · Mission control explicitly continued after an inference failure.</p>
+        </li>}
+        <DecisionEntry decision={decision} />
+      </Fragment>;
+    })}</ol>
       : <p className="memory-note">Decisions will appear when the expedition starts.</p>}
   </section>;
 }

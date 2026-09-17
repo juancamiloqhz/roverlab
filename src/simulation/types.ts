@@ -43,7 +43,8 @@ export type ExpeditionController = {
   id: 'baseline' | 'scripted' | 'typesafe';
   decide(input: ControllerInput, context: { signal: AbortSignal; reserveAttempt(): boolean }): string | Promise<string | DecisionOutcome>;
 };
-export type DecisionReason = 'start' | 'action-completed' | 'instructions-changed' | 'new-observations';
+export type ControllerHistoryEntry = { controller: ExpeditionController['id']; atMs: number; firstDecisionId: number };
+export type DecisionReason = 'start' | 'action-completed' | 'instructions-changed' | 'new-observations' | 'retry' | 'controller-changed';
 export type Decision = {
   reason: DecisionReason;
   id: number; controller: ExpeditionController['id'];
@@ -77,13 +78,14 @@ export type ControllerInput = {
 export type PlaybackSpeed = 1 | 2 | 4;
 export type EndingCondition = 'timeout' | 'manual-stop' | 'stranded';
 export type ExpeditionCommand =
-  | { type: 'start' | 'pause' | 'resume' | 'reset' | 'stop' }
+  | { type: 'start' | 'pause' | 'resume' | 'reset' | 'stop' | 'retry-decision' | 'continue-with-baseline' }
   | { type: 'set-instructions'; instructions: string }
   | { type: 'set-objective'; objective: ScientificObjective }
   | { type: 'set-controller'; controller: 'baseline' | 'typesafe' }
   | { type: 'set-speed'; speed: PlaybackSpeed };
 export type ExpeditionSnapshot = {
   controller: ExpeditionController['id'];
+  controllerHistory: ControllerHistoryEntry[];
   inferenceAttempts: number;
   inferenceLatencyMs: number;
   decisionFailure: DecisionFailure | null;
@@ -119,6 +121,7 @@ export type ExpeditionSnapshot = {
 };
 export type EventDetail =
   | { type: 'controller-selected'; controller: ExpeditionController['id'] }
+  | { type: 'controller-changed'; from: ExpeditionController['id']; to: ExpeditionController['id']; failure: DecisionFailure }
   | { type: 'inference-attempt'; decisionId: number; attempt: number; controller: ExpeditionController['id'] }
   | { type: 'decision-settled'; decision: Decision }
   | { type: 'instructions-changed'; instructions: string; version: number }

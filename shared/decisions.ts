@@ -43,12 +43,12 @@ export const controllerInputSchema: z.ZodType<ControllerInput> = z.strictObject(
 export const failureSchema = z.enum(['configuration', 'unavailable', 'deadline', 'invalid-output', 'invalid-request', 'budget', 'cancelled']);
 export type DecisionFailure = z.infer<typeof failureSchema>;
 export const failureMessages: Record<DecisionFailure, string> = {
-  configuration: 'TypeSafe is not configured or rejected the server credential. Configure the server key and reset.',
-  unavailable: 'The TypeSafe service could not complete the decision. Stop or reset the expedition.',
-  deadline: 'The decision exceeded its five-second wall-clock deadline. Stop or reset the expedition.',
-  'invalid-output': 'TypeSafe returned an invalid decision. No action was executed. Stop or reset the expedition.',
-  'invalid-request': 'The decision request was invalid. Stop or reset the expedition.',
-  budget: 'The 100-attempt inference budget is exhausted. Stop or reset the expedition.',
+  configuration: 'TypeSafe is not configured or rejected the server credential. Configure the server key before retrying.',
+  unavailable: 'The TypeSafe service could not complete the decision.',
+  deadline: 'The decision exceeded its five-second wall-clock deadline.',
+  'invalid-output': 'TypeSafe returned an invalid decision. No action was executed.',
+  'invalid-request': 'The decision request was invalid.',
+  budget: 'The 100-attempt inference budget is exhausted.',
   cancelled: 'The obsolete decision was cancelled.',
 };
 export const choiceSchema = z.strictObject({

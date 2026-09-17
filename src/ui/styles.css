@@ -124,3 +124,10 @@ footer { display: flex; justify-content: space-between; gap: 20px; border-top: 1
 .decision-table th, .decision-table td { padding: 7px; text-align: left; border-bottom: 1px solid #334039; vertical-align: top; }
 .decision-table th { background: #23332e; }
 .decision-table td:first-child { overflow-wrap: anywhere; }
+
+.recovery-panel { margin-top: 16px; padding: 16px; border: 1px solid #806b4c; border-radius: 8px; background: #302e26; }
+.recovery-panel p { margin: 0 0 12px; color: #ded5bf; font-size: 12px; line-height: 1.6; }
+.recovery-panel p:last-child { margin-bottom: 0; }
+.recovery-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.controller-transition { padding: 14px 4px; color: #d5e7c9; font-size: 12px; line-height: 1.6; }
+.controller-transition p { margin: 4px 0 0; color: #aec4af; }

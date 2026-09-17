@@ -44,6 +44,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
   const { snapshot, decisions, dispatch } = useExpedition(createSession);
   const { status, currentAction, rover } = snapshot;
   const controllerLabel = controllerLabels[snapshot.controller];
+  const controllerHistoryLabel = snapshot.controllerHistory.map(entry => controllerLabels[entry.controller]).join(' → ');
   const knownCells = snapshot.memory.filter(item => item.kind === 'terrain').length;
   const samples = snapshot.memory.filter(item => item.kind === 'sample');
   const currentIds = new Set(snapshot.observations.map(item => item.id));
@@ -52,7 +53,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
   const statusLabel = snapshot.decisionPending && active ? 'Decision pending · Expedition time frozen' : { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
   const { label: actionLabel, description: actionDescription } = snapshot.decisionPending && active
     ? { label: 'Awaiting decision', description: 'Expedition time and resources are frozen. Camera and mission controls remain available.' }
-    : snapshot.decisionFailure ? { label: 'Decision paused', description: failureMessages[snapshot.decisionFailure] } : describeAction(currentAction, status);
+    : snapshot.decisionFailure && active ? { label: 'Decision paused', description: failureMessages[snapshot.decisionFailure] } : describeAction(currentAction, status);
 
   return (
     <div className="app-shell">
@@ -62,7 +63,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
       </header>
       <main>
         <div className="page-heading">
-          <div><p className="eyebrow">{snapshot.controller.toUpperCase()} EXPEDITION</p><h2>{snapshot.area.name}<span className="title-dot">.</span></h2><p className="page-description">An unknown world. An autonomous rover. Discover it together.</p></div>
+          <div><p className="eyebrow">{snapshot.controllerHistory.map(entry => entry.controller.toUpperCase()).join(' → ')} EXPEDITION</p><h2>{snapshot.area.name}<span className="title-dot">.</span></h2><p className="page-description">An unknown world. An autonomous rover. Discover it together.</p></div>
           <div className="scenario-info"><span>AUTHORED SCENARIO</span><strong>{snapshot.area.width} × {snapshot.area.depth} <span>grid</span></strong><small>{snapshot.durationMs / 60_000}-minute expedition</small></div>
         </div>
         <div className="workspace">
@@ -80,9 +81,19 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
               </div>
               <div className="speed-control" role="group" aria-label="Playback speed"><span>Playback</span>{([1, 2, 4] as const).map(speed => <button key={speed} aria-pressed={snapshot.speed === speed} disabled={status === 'ended'} onClick={() => dispatch({ type: 'set-speed', speed })}>{speed}×</button>)}</div>
             </section>
-            {snapshot.decisionFailure && <p role="status">{failureMessages[snapshot.decisionFailure]}</p>}
+            {snapshot.decisionFailure && status === 'paused' && <section className="recovery-panel" aria-label="Inference recovery">
+              <p role="status">{failureMessages[snapshot.decisionFailure]}</p>
+              {snapshot.controller === 'typesafe' && <>
+                <p>Expedition time and resources remain paused. Retry uses the current mission instructions and remaining inference budget. Continuing with baseline resumes this expedition and records the controller change.</p>
+                <div className="recovery-actions">
+                  <button className="primary" disabled={snapshot.inferenceAttempts >= INFERENCE_LIMIT || snapshot.decisionPending} onClick={() => dispatch({ type: 'retry-decision' })}>Retry</button>
+                  <button className="secondary" disabled={snapshot.decisionPending} onClick={() => dispatch({ type: 'continue-with-baseline' })}>Continue with the baseline controller</button>
+                </div>
+                {snapshot.inferenceAttempts >= INFERENCE_LIMIT && <p>Retry unavailable: all {INFERENCE_LIMIT} inference attempts have been used. Continue with baseline, stop, or reset for a new expedition.</p>}
+              </>}
+            </section>}
             <p className="world-note"><span aria-hidden="true">↳</span> You set the pace. The rover chooses its own targets and routes.</p>
-            <DecisionTimeline decisions={decisions} />
+            <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} />
           </div>
           <aside className="telemetry" aria-label="Expedition telemetry">
             <div className="panel-title"><span>MISSION CONTROL</span><span className="connection-dot" /></div>
@@ -137,7 +148,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
                 {delivery && <small>{delivery.classification === 'strong-evidence' ? 'Strong evidence' : delivery.classification === 'suggestive' ? 'Suggestive' : 'Unrelated'} · {delivery.score} science points</small>}
               </div>; })}
             </section>
-            {status === 'ended' && <section className="result" aria-label="Expedition results" aria-live="polite"><span className="field-label">ENDING CONDITION</span><h3>{endingLabel}</h3>{snapshot.endingCondition === 'stranded' && <p>The battery was exhausted away from base.</p>}<p>{scientificObjectives[snapshot.objective]} · {snapshot.scienceScore} science points from {snapshot.deliveredSamples.length} delivered samples.</p><p>{knownCells} terrain cells and {snapshot.discoveryCount} samples discovered; {snapshot.inspectionCount} inspected in {formatTime(snapshot.elapsedMs)} of expedition time.</p><p>{snapshot.energyUsed.toFixed(1)} energy units used; {snapshot.battery.toFixed(1)} / {snapshot.batteryCapacity} battery remaining. {controllerLabel}.</p><p>{snapshot.inferenceAttempts} inference attempts · {snapshot.inferenceLatencyMs.toFixed(0)} ms total request latency (wall time).</p><p>{snapshot.cargo.length} samples remain aboard without delivery credit.</p></section>}
+            {status === 'ended' && <section className="result" aria-label="Expedition results" aria-live="polite"><span className="field-label">ENDING CONDITION</span><h3>{endingLabel}</h3>{snapshot.endingCondition === 'stranded' && <p>The battery was exhausted away from base.</p>}<p>{scientificObjectives[snapshot.objective]} · {snapshot.scienceScore} science points from {snapshot.deliveredSamples.length} delivered samples.</p><p>{knownCells} terrain cells and {snapshot.discoveryCount} samples discovered; {snapshot.inspectionCount} inspected in {formatTime(snapshot.elapsedMs)} of expedition time.</p><p>{snapshot.energyUsed.toFixed(1)} energy units used; {snapshot.battery.toFixed(1)} / {snapshot.batteryCapacity} battery remaining.</p><p>Controllers used: {controllerHistoryLabel}.</p><p>{snapshot.inferenceAttempts} inference attempts · {snapshot.inferenceLatencyMs.toFixed(0)} ms total request latency (wall time).</p><p>{snapshot.cargo.length} samples remain aboard without delivery credit.</p></section>}
           </aside>
         </div>
         <footer><span>ROVERLAB <span className="footer-separator">/</span> AUTONOMOUS EXPLORATION</span><span>{controllerLabel} · {snapshot.area.id}</span></footer>
