@@ -8,7 +8,7 @@ Give a rover a mission, change its environment, and inspect how its choices affe
 
 Tickets [01](.scratch/first-playable-release/issues/01-watch-an-autonomous-expedition.md), [02](.scratch/first-playable-release/issues/02-discover-the-area-through-limited-perception.md), [03](.scratch/first-playable-release/issues/03-inspect-collect-and-deliver-scientific-samples.md), [04: Manage energy across multiple trips](.scratch/first-playable-release/issues/04-manage-energy-across-multiple-trips.md), and [05: Inspect decisions and update mission instructions](.scratch/first-playable-release/issues/05-inspect-decisions-and-update-mission-instructions.md) are implemented. Choose Investigate past water or Find unusual minerals, then watch a local 3D baseline expedition discover terrain, inspect samples, collect cargo, return it to base, and recharge for further trips. Orbit the camera and use pause/resume, reset, stop, and 1×/2×/4× playback. Battery and accumulated energy use are visible throughout. Results show discoveries, inspections, delivered science score, energy use, the ending condition, baseline attribution, and uncredited cargo. Edit mission instructions before or during the expedition and expand the decision timeline to inspect the exact knowledge, resources, complete candidates, and selected action at each decision. No API key is needed.
 
-The remaining [first playable release tickets](.scratch/first-playable-release/issues/) add TypeSafe decisions, storms, observation aids, and saved records/replay.
+[Ticket 06](.scratch/first-playable-release/issues/06-run-a-typesafe-controlled-expedition.md) adds a selectable TypeSafe controller, a local Bun backend, returned Choice probabilities, bounded inference, and attempt/latency accounting. The baseline remains the default and requires no key or backend. The remaining [first playable release tickets](.scratch/first-playable-release/issues/) add explicit inference recovery, storms, observation aids, and saved records/replay.
 ## Planned complete demo
 
 A local 3D sandbox with one rover, a designed planetary area, a charging base, three sample sites, and a localized dust storm. Five-minute expeditions offer two scientific objectives, editable mission instructions, two-sample cargo capacity, and delivery-only scoring. The rover chooses between exploration, inspection, collection, returning to base, recharging, and waiting. Decisions can be inspected, saved, and replayed.
@@ -44,6 +44,7 @@ bun test tests/perception.test.ts # sensor boundaries, memory, and known-map nav
 bun test tests/science.test.ts    # inspection, cargo, fixed objectives, and delivery scoring
 bun test tests/energy.test.ts     # terrain costs, multiple trips, recharge, depletion, and interaction timeout
 bun test tests/decisions.test.ts # instruction edits, safe reconsideration, pending decisions, and stale results
+bun test tests/typesafe.test.ts # real SDK with scripted service, validation, retries, deadlines, cancellation, budget
 bun test                        # all non-browser tests
 bun run build
 bun run preview                 # serve the production build locally
@@ -62,7 +63,7 @@ On Linux, Playwright may also need system browser libraries (`bunx playwright in
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium bun run test:browser
 ```
 
-`bun run check` runs typechecking, the production build, the full Bun suite, and the browser smoke checks. These start their own Vite server on port 4173. They verify the scene and labels, autonomous movement, an orbit-camera change while paused, every playback setting, reset, timeout, manual stop, visible discovery, remembered observations, objective selection, inspection, cargo, delivery scoring, battery use, recharge/pause behavior, instruction edits, baseline decision inspection, and camera/control responsiveness during scripted pending decisions with controlled browser time. Screenshots and failure traces go to ignored `test-results/`.
+`bun run check` runs typechecking, the production build, the full Bun suite, and the browser smoke checks. These start their own Vite server on port 4173 and a scripted-service backend on port 4174. They verify the scene and labels, autonomous movement, an orbit-camera change while paused, every playback setting, reset, timeout, manual stop, visible discovery, remembered observations, objective selection, inspection, cargo, delivery scoring, battery use, recharge/pause behavior, instruction edits, decision inspection, TypeSafe selection/probabilities/failure status, and camera/control responsiveness during pending decisions. Verification never loads a real key or calls the paid service. Screenshots and failure traces go to ignored `test-results/`.
 
 ### Expedition boundary
 
@@ -86,7 +87,7 @@ Apply instruction edits to record them and update controller context without cha
 
 Action completion, newly discovered terrain or objects, and changed instructions prompt decisions. Travel stops for reconsideration at the next grid waypoint; inspection, collection, and bounded waiting already underway finish first. Recharge can be interrupted while stationary. Refreshing last-seen timestamps during routine movement does not request another decision. This means the authored rover now pursues Sample A at its first discovery instead of finishing its initial exploration target first.
 
-The coordinator admits at most one controller request at a time. Pending decisions freeze expedition time, movement, energy, and perception. Camera, pause, stop, reset, speed, and instruction controls remain responsive. Edits and lifecycle changes discard obsolete results; a replacement request waits for the outstanding request to settle. Returned identities must match an originally offered candidate that still satisfies current preconditions, and execution uses the simulator's copy. Invalid selections pause without automatic controller substitution. The baseline resolves synchronously; scripted delayed controllers exist only in verification. Live inference, cancellation/deadlines/retries, and recovery controls belong to tickets 06–07. Request latency is recorded separately from simulated time.
+The coordinator admits at most one controller decision at a time. Pending decisions freeze expedition time, movement, energy, and perception. Camera, pause, stop, reset, speed, and instruction controls remain responsive. Edits and lifecycle changes discard obsolete results and cancel TypeSafe requests; replacements wait for the cancelled operation to settle. Returned identities must match an originally offered candidate that still satisfies current preconditions, and execution uses the simulator's copy. Invalid selections pause without automatic controller substitution. The baseline resolves synchronously. TypeSafe failures also pause; stop/reset remain available, and dedicated recovery controls belong to ticket 07. Request latency is recorded separately from simulated time.
 
 ## Design principles
 
@@ -101,9 +102,22 @@ See [the build plan](docs/build-plan.md) for the accepted decisions, starting de
 
 ## TypeSafe access
 
-Live AI decisions will require a TypeSafe API key. The first simulation milestone uses a rule-based controller and can be developed without that key. The environment example is a placeholder for the planned backend; configuration loading will be implemented with it.
+To run TypeSafe, copy `.env.example` to the ignored `.env` and set `TYPESAFE_API_KEY` there, or supply it in the backend process environment. Never prefix it with `VITE_`. Run these in separate terminals:
 
-Ticket 06 must verify the official SDK under the selected Bun version, including cancellation, deadlines, and retries. The [SDK quickstart](https://docs.typesafe.ai/sdk/javascript) currently documents Node.js 20 or newer; Bun compatibility has not yet been tested for RoverLab.
+```sh
+bun run dev:server # loopback backend on 127.0.0.1:3001; Bun loads .env
+bun run dev        # Vite proxies /api to that backend
+```
+
+Choose **TypeSafe · Server key required** before starting. Reset unlocks controller selection for a fresh expedition. `bun run start:server` runs the backend without watching; `bun run preview` also proxies to it. `ROVERLAB_BACKEND_URL` optionally changes the local proxy target (used by browser verification). No credential enters browser code, responses, records, or SDK logs. The server explicitly disables SDK logging and returns only validated choices or fixed failure codes, never provider error bodies.
+
+The official `@typesafe-ai/sdk` **0.6.0** is exercised under **Bun 1.4.2**. Its installed types/source and [official SDK reference](https://docs.typesafe.ai/sdk/javascript) were checked: `systemOne` accepts typed `choice` questions, `AbortSignal`, per-attempt timeout, and retry configuration. The SDK normally retries twice and has no total retry deadline. RoverLab sets `maxRetries: 0` on the client and each call. The browser controller owns one five-second operation across local transport, body reading, and at most one immediate retry; the backend receives the same absolute deadline and aborts its one SDK attempt within the remaining time. Only transport failures and provider 408, 429, or 5xx failures are eligible for automatic retry. Invalid output and configuration failures do not retry.
+
+The expedition reserves each attempt before submitting its local inference request, including retries and requests that fail before reaching TypeSafe. This conservative accounting prevents uncertain transport failures or cancellation from refunding usage. At 100 attempts, further inference pauses before sending a request. Stop/reset and instruction changes abort obsolete operations; their attempts and settlement latency remain in the original expedition's event history. Reset gives the new expedition a fresh budget. Manual pause preserves an outstanding valid request but does not resume simulation when it returns.
+
+Runtime contracts reject unexpected context fields and validate complete candidate identities, finite probabilities in [0, 1], and a complete distribution summing to one (0.01 rounding tolerance). TypeSafe sees only rover knowledge and resources, never authored sample classifications or undiscovered properties. Actual probabilities appear beside candidates and remain in events; they are not scientific value, a correctness guarantee, or reasoning. Uncertain valid choices proceed automatically.
+
+The no-credential tests exercise the actual SDK against scripted external responses, including full expeditions, a shared retry deadline, stalled bodies, native Bun HTTP cancellation, stale results, invalid output, exhausted budgets, and credential/log isolation. Live scientific decision quality has not been evaluated with paid calls.
 
 ## References
 

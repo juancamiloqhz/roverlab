@@ -1,0 +1,54 @@
+import { expect, test } from '@playwright/test';
+
+test('TypeSafe pending decisions keep the camera and controls responsive and show actual probabilities and usage', async ({ page, request }) => {
+  await page.clock.install();
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
+  await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Hold for browser verification');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await expect(page.getByRole('combobox', { name: 'Expedition controller' })).toBeDisabled();
+  await expect(page.getByLabel('Current action')).toHaveText('Awaiting decision');
+  const scene = page.getByRole('region', { name: 'Planetary scene' });
+  const before = await scene.screenshot();
+  const box = (await scene.locator('canvas').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 150, box.y + box.height / 2 + 60, { steps: 8 });
+  await page.mouse.up();
+  await page.clock.runFor(300);
+  expect(await scene.screenshot()).not.toEqual(before);
+  await page.getByRole('button', { name: '4×', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause expedition' }).click();
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('05:00');
+  await expect(page.getByLabel('Battery charge', { exact: true })).toHaveText('100.0 / 100');
+  await request.post('http://127.0.0.1:4174/release');
+  await expect(page.getByLabel('Current action')).toContainText('Wait');
+  const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await timeline.getByText(/Decision 1 ·/).click();
+  await expect(timeline).toContainText('TypeSafe controller');
+  await expect(timeline.getByRole('table', { name: 'Available actions' })).toContainText('Returned probability');
+  await expect(timeline).toContainText('Inference attempts: 1');
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  const results = page.getByRole('region', { name: 'Expedition results' });
+  await expect(results).toContainText('TypeSafe controller');
+  await expect(results).toContainText('1 inference attempts');
+  await page.screenshot({ path: 'test-results/typesafe-probabilities.png', fullPage: true });
+});
+
+test('invalid TypeSafe output visibly pauses with stop and reset available and no controller switch', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
+  await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Invalid choice for browser verification');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await expect(page.getByRole('status')).toContainText('TypeSafe returned an invalid decision');
+  await expect(page.getByRole('button', { name: 'Resume expedition' })).toBeDisabled();
+  await expect(page.getByLabel('Inference usage')).toContainText('1 / 100');
+  await expect(page.getByRole('button', { name: 'Stop expedition' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await expect(page.getByLabel('Inference usage')).toContainText('0 / 100');
+  await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('baseline');
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await expect(page.getByLabel('Current action')).toContainText('Explore');
+});

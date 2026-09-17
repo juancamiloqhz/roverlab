@@ -1,0 +1,330 @@
+import { expect, test, spyOn } from 'bun:test';
+import { createDecisionHandler } from '../server/decisions';
+import { createTypeSafeController } from '../src/controllers/typesafe';
+import { createExpedition } from '../src/simulation/expedition';
+import type { ControllerInput, Scenario } from '../src/simulation/types';
+import { chooseBaselineAction } from '../src/controllers/baseline';
+import type { Fetch } from '@typesafe-ai/sdk';
+import type { DecisionClock } from '../shared/decisions';
+
+function manualClock() {
+  let time = 100_000;
+  const timers = new Map<() => void, number>();
+  return {
+    now: () => time,
+    after(ms: number, callback: () => void) { timers.set(callback, time + ms); return () => { timers.delete(callback); }; },
+    advance(ms: number) {
+      time += ms;
+      for (const [callback, at] of timers) if (at <= time) { timers.delete(callback); callback(); }
+    },
+  };
+}
+const flush = () => Bun.sleep(0);
+const success = (input: ControllerInput, selected = 'wait:5000') => Response.json({
+  answers: { action: { type: 'choice', choice: selected, confidence: 0,
+    probabilities: Object.fromEntries(input.candidates.map(candidate => [candidate.id, 1 / input.candidates.length])) } },
+});
+function expeditionWithService(service: Fetch, options: { clock?: DecisionClock; scenario?: Scenario } = {}) {
+  const responses: string[] = [];
+  const handler = createDecisionHandler({ apiKey: 'test-key-never-expose', fetch: service, clock: options.clock });
+  const controller = createTypeSafeController({ clock: options.clock, fetch: async (url, init) => {
+    const response = await handler(new Request(new URL(url, 'http://localhost'), init));
+    responses.push(await response.clone().text());
+    return response;
+  } });
+  const expedition = createExpedition({ controller, scenario: options.scenario });
+  return { expedition, responses };
+}
+function settled(expedition: ReturnType<typeof createExpedition>) {
+  return new Promise<void>(resolve => {
+    const unsubscribe = expedition.onDecisionSettled(() => { unsubscribe(); resolve(); });
+  });
+}
+
+test('an uncertain TypeSafe Choice executes an offered action and records its actual probabilities', async () => {
+  const requests: unknown[] = [];
+  const handler = createDecisionHandler({ apiKey: 'test-key-never-expose', fetch: async (_url, init) => {
+    const body = JSON.parse(init!.body as string);
+    requests.push(body);
+    const ids = Object.keys(body.questions.action.criteria);
+    return Response.json({ answers: { action: { type: 'choice', choice: 'wait:5000', confidence: 0,
+      probabilities: Object.fromEntries(ids.map(id => [id, 1 / ids.length])) } } });
+  } });
+  const controller = createTypeSafeController({ fetch: (url, init) => handler(new Request(new URL(url, 'http://localhost'), init)) });
+  const expedition = createExpedition({ controller });
+  expedition.dispatch({ type: 'start' });
+  await new Promise<void>(resolve => expedition.onDecisionSettled(resolve));
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'running', controller: 'typesafe', inferenceAttempts: 1, currentAction: { kind: 'wait' } });
+  expect(expedition.getDecisions()[0]).toMatchObject({ status: 'applied', controller: 'typesafe', inferenceAttempts: 1, confidence: 0 });
+  expect(expedition.getDecisions()[0]!.probabilities!['wait:5000']).toBeGreaterThan(0);
+  expect(JSON.stringify(requests)).not.toContain('classifications');
+  expect(JSON.stringify(requests)).not.toContain('Sample B');
+  expect(JSON.stringify(expedition.getRecord())).not.toContain('test-key-never-expose');
+  expedition.advanceWallTime(1000);
+  expect(expedition.getSnapshot().elapsedMs).toBe(1000);
+});
+
+test('one retry follows a transient external failure and both attempts are recorded without SDK retries', async () => {
+  let attempts = 0;
+  const { expedition } = expeditionWithService(async (_url, init) => {
+    attempts++;
+    if (attempts === 1) return new Response('temporary', { status: 503 });
+    expect(new Headers(init!.headers).has('X-TypeSafe-Retry-Count')).toBe(false);
+    return success(JSON.parse(init!.body as string).state);
+  });
+  expedition.dispatch({ type: 'start' });
+  await settled(expedition);
+  expect(attempts).toBe(2);
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'running', inferenceAttempts: 2 });
+  expect(expedition.getDecisions()[0]).toMatchObject({ inferenceAttempts: 2, status: 'applied' });
+  expect(expedition.getRecord().events.filter(event => event.type === 'inference-attempt')).toHaveLength(2);
+});
+
+test('a retry shares the five-second total deadline, aborts the SDK and freezes modeled evolution', async () => {
+  const clock = manualClock();
+  let attempts = 0;
+  let release!: () => void;
+  let retrySignal!: AbortSignal;
+  const { expedition } = expeditionWithService((_url, init) => {
+    attempts++;
+    if (attempts === 1) return new Promise(resolve => { release = () => resolve(new Response('temporary', { status: 503 })); });
+    retrySignal = init!.signal!;
+    return new Promise((_resolve, reject) => retrySignal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }));
+  }, { clock });
+  expedition.dispatch({ type: 'start' });
+  await flush();
+  const frozen = expedition.getSnapshot();
+  clock.advance(4_000);
+  expedition.advanceWallTime(4_000);
+  expect(expedition.getSnapshot()).toEqual(frozen);
+  release();
+  await flush();
+  expect(attempts).toBe(2);
+  clock.advance(999);
+  await flush();
+  expect(expedition.getSnapshot().decisionPending).toBe(true);
+  clock.advance(1);
+  await flush();
+  expect(retrySignal.aborted).toBe(true);
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', decisionFailure: 'deadline', elapsedMs: 0, battery: 100, inferenceAttempts: 2 });
+  expedition.dispatch({ type: 'resume' });
+  expedition.dispatch({ type: 'set-instructions', instructions: 'Try again.' });
+  expect(expedition.getSnapshot().status).toBe('paused');
+  expect(attempts).toBe(2);
+  expedition.dispatch({ type: 'stop' });
+  expect(expedition.getSnapshot().endingCondition).toBe('manual-stop');
+});
+
+test.each(['invented-choice', 'missing-probability', 'bad-probability', 'wrong-type', 'malformed-json'])(
+  'invalid external output (%s) pauses without a retry or controller substitution', async invalid => {
+    let attempts = 0;
+    const { expedition } = expeditionWithService(async (_url, init) => {
+      attempts++;
+      if (invalid === 'malformed-json') return new Response('{broken', { headers: { 'Content-Type': 'application/json' } });
+      const body = await success(JSON.parse(init!.body as string).state).json();
+      const answer = body.answers.action;
+      if (invalid === 'invented-choice') answer.choice = 'invented';
+      if (invalid === 'missing-probability') delete answer.probabilities['wait:5000'];
+      if (invalid === 'bad-probability') answer.probabilities['wait:5000'] = 99;
+      if (invalid === 'wrong-type') answer.type = 'score';
+      return Response.json(body);
+    });
+    expedition.dispatch({ type: 'start' });
+    await settled(expedition);
+    expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', decisionFailure: 'invalid-output', controller: 'typesafe', currentAction: null, inferenceAttempts: 1 });
+    expect(attempts).toBe(1);
+  },
+);
+
+test('malformed browser/backend output pauses instead of automatically retrying an invalid response', async () => {
+  const controller = createTypeSafeController({ fetch: async () => new Response('{broken') });
+  const expedition = createExpedition({ controller });
+  expedition.dispatch({ type: 'start' });
+  await settled(expedition);
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', decisionFailure: 'invalid-output', inferenceAttempts: 1 });
+});
+
+test.each(['set-instructions', 'reset', 'stop'] as const)('%s cancels the external request, discards late output and preserves attempt attribution', async command => {
+  const pending: { input: ControllerInput; signal: AbortSignal; resolve: (response: Response) => void }[] = [];
+  const { expedition } = expeditionWithService((_url, init) => new Promise(resolve => {
+    pending.push({ input: JSON.parse(init!.body as string).state, signal: init!.signal!, resolve });
+  }));
+  expedition.dispatch({ type: 'start' });
+  await flush();
+  if (command === 'set-instructions') expedition.dispatch({ type: command, instructions: 'New instructions' });
+  else expedition.dispatch({ type: command });
+  if (command === 'reset') expedition.dispatch({ type: 'start' });
+  await flush();
+  expect(pending[0]!.signal.aborted).toBe(true);
+  pending[0]!.resolve(success(pending[0]!.input, pending[0]!.input.candidates[0]!.id));
+  await flush();
+  expect(expedition.getRecord().events.filter(event => event.type === 'action-started')).toHaveLength(0);
+  if (command !== 'stop') {
+    expect(pending).toHaveLength(2);
+    expect(expedition.getSnapshot().inferenceAttempts).toBe(command === 'reset' ? 1 : 2);
+    pending[1]!.resolve(success(pending[1]!.input));
+    await settled(expedition);
+    expect(expedition.getSnapshot().currentAction?.kind).toBe('wait');
+  } else expect(expedition.getSnapshot()).toMatchObject({ status: 'ended', inferenceAttempts: 1 });
+  expect(expedition.getRecord().events.filter(event => event.type === 'decision-settled')[0]).toMatchObject({ expedition: 1, decision: { status: 'discarded', inferenceAttempts: 1 } });
+});
+
+test.each([false, true])('the 100-attempt cap stops the next attempt, including a retry at the limit (%s)', async failLast => {
+  let attempts = 0;
+  const { expedition } = expeditionWithService(async (_url, init) => {
+    attempts++;
+    if (attempts < 100) return new Promise((_resolve, reject) => init!.signal!.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }));
+    if (attempts === 100 && failLast) return new Response('retryable', { status: 503 });
+    return success(JSON.parse(init!.body as string).state);
+  });
+  expedition.dispatch({ type: 'start' });
+  await flush();
+  for (let i = 1; i < 100; i++) {
+    expedition.dispatch({ type: 'set-instructions', instructions: `Instructions ${i}` });
+    await flush();
+  }
+  expect(expedition.getSnapshot().inferenceAttempts).toBe(100);
+  if (!failLast) {
+    expedition.advanceWallTime(5_000);
+    await settled(expedition);
+  }
+  expect(expedition.getSnapshot().decisionFailure).toBe('budget');
+  expect(attempts).toBe(100);
+});
+
+test('a complete TypeSafe expedition uses only rover knowledge through exploration, inspection, delivery and recharge', async () => {
+  const inputs: ControllerInput[] = [];
+  const { expedition } = expeditionWithService(async (_url, init) => {
+    const input = JSON.parse(init!.body as string).state as ControllerInput;
+    inputs.push(input);
+    return success(input, chooseBaselineAction(input).id);
+  });
+  expedition.dispatch({ type: 'start' });
+  while (expedition.getSnapshot().status === 'running') {
+    if (expedition.getSnapshot().decisionPending) await settled(expedition);
+    expedition.advanceWallTime(100);
+  }
+  const snapshot = expedition.getSnapshot();
+  expect(snapshot.endingCondition).toBe('timeout');
+  expect(snapshot.scienceScore).toBeGreaterThan(0);
+  expect(snapshot.inspectionCount).toBeGreaterThan(0);
+  expect(expedition.getRecord().events.some(event => event.type === 'action-completed' && event.action.kind === 'recharge')).toBe(true);
+  expect(expedition.getDecisions().every(decision => decision.controller === 'typesafe' && decision.status === 'applied')).toBe(true);
+  expect(JSON.stringify(inputs)).not.toContain('classifications');
+  expect(JSON.stringify(inputs[0])).not.toContain('Layered sediment');
+  expect(expedition.getRecord().results.inferenceAttempts).toBe(inputs.length);
+});
+
+test('persistent service failure stops after two attempts and cannot leak echoed credentials or SDK logs', async () => {
+  const logs = (['debug', 'info', 'warn', 'error'] as const).map(level => spyOn(console, level).mockImplementation(() => {}));
+  try {
+    let attempts = 0;
+    const { expedition, responses } = expeditionWithService(async () => {
+      attempts++;
+      return new Response('test-key-never-expose', { status: 503 });
+    });
+    expedition.dispatch({ type: 'start' });
+    await settled(expedition);
+    expect(expedition.getSnapshot().decisionFailure).toBe('unavailable');
+    expect(attempts).toBe(2);
+    expect(JSON.stringify(responses)).not.toContain('test-key-never-expose');
+    expect(JSON.stringify(expedition.getRecord())).not.toContain('test-key-never-expose');
+    for (const log of logs) expect(log).not.toHaveBeenCalled();
+  } finally { for (const log of logs) log.mockRestore(); }
+});
+
+test('the backend rejects unexpected request fields before issuing a paid-service attempt', async () => {
+  let attempts = 0;
+  const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async () => { attempts++; throw new Error('should not run'); } });
+  const controller = createTypeSafeController({ fetch: (url, init) => {
+    const body = JSON.parse(init.body as string);
+    body.input.world = { hiddenSamples: [] };
+    return handler(new Request(new URL(url, 'http://localhost'), { ...init, body: JSON.stringify(body) }));
+  } });
+  const expedition = createExpedition({ controller });
+  expedition.dispatch({ type: 'start' });
+  await settled(expedition);
+  expect(expedition.getSnapshot().decisionFailure).toBe('invalid-request');
+  expect(attempts).toBe(0);
+});
+
+test('a server without a key pauses TypeSafe while baseline remains key-free', async () => {
+  const handler = createDecisionHandler();
+  const typesafeController = createTypeSafeController({ fetch: (url, init) => handler(new Request(new URL(url, 'http://localhost'), init)) });
+  const expedition = createExpedition({ typesafeController });
+  expedition.dispatch({ type: 'set-controller', controller: 'typesafe' });
+  expedition.dispatch({ type: 'start' });
+  await settled(expedition);
+  expect(expedition.getSnapshot()).toMatchObject({ controller: 'typesafe', decisionFailure: 'configuration', status: 'paused' });
+  expedition.dispatch({ type: 'reset' });
+  expedition.dispatch({ type: 'set-controller', controller: 'baseline' });
+  expedition.dispatch({ type: 'start' });
+  expedition.advanceWallTime(1000);
+  expect(expedition.getSnapshot()).toMatchObject({ controller: 'baseline', inferenceAttempts: 0, elapsedMs: 1000 });
+});
+
+test('Bun HTTP cancellation reaches the real SDK and aborts its external transport', async () => {
+  let serviceSignal!: AbortSignal;
+  let notifyStarted!: () => void;
+  const started = new Promise<void>(resolve => { notifyStarted = resolve; });
+  const handler = createDecisionHandler({ apiKey: 'test-key', fetch: (_url, init) => {
+    serviceSignal = init!.signal!;
+    notifyStarted();
+    return new Promise((_resolve, reject) => serviceSignal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }));
+  } });
+  const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: handler });
+  try {
+    const controller = createTypeSafeController({ fetch: (url, init) => fetch(new URL(url, server.url), init) });
+    const expedition = createExpedition({ controller });
+    expedition.dispatch({ type: 'start' });
+    await started;
+    expedition.dispatch({ type: 'stop' });
+    await settled(expedition);
+    for (let i = 0; i < 20 && !serviceSignal.aborted; i++) await Bun.sleep(5);
+    expect(serviceSignal.aborted).toBe(true);
+    expect(expedition.getSnapshot()).toMatchObject({ status: 'ended', inferenceAttempts: 1, currentAction: null });
+  } finally { await server.stop(true); }
+});
+
+test('the deadline covers a stalled response body and late bytes cannot execute an action', async () => {
+  const clock = manualClock();
+  let signal!: AbortSignal;
+  let body!: ReadableStreamDefaultController<Uint8Array>;
+  const { expedition } = expeditionWithService(async (_url, init) => {
+    signal = init!.signal!;
+    return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+      body = controller;
+      controller.enqueue(new TextEncoder().encode('{"answers":'));
+    } }), { headers: { 'Content-Type': 'application/json' } });
+  }, { clock });
+  expedition.dispatch({ type: 'start' });
+  await flush();
+  clock.advance(5_000);
+  await flush();
+  expect(signal.aborted).toBe(true);
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', decisionFailure: 'deadline', inferenceAttempts: 1, currentAction: null });
+  // A cancelled stream may already be closed by the SDK; either way it is stale.
+  try { body.close(); } catch { /* already cancelled */ }
+  await flush();
+  expect(expedition.getSnapshot().currentAction).toBeNull();
+});
+
+test('a successful response arriving after the deadline is rejected even before a delayed timer callback runs', async () => {
+  let now = 100_000;
+  const clock: DecisionClock = { now: () => now, after(ms, callback) {
+    const timer = setTimeout(callback, ms);
+    return () => clearTimeout(timer);
+  } };
+  const handler = createDecisionHandler({ apiKey: 'test-key', clock, fetch: async (_url, init) => success(JSON.parse(init!.body as string).state) });
+  const controller = createTypeSafeController({ clock, fetch: async (url, init) => {
+    const response = await handler(new Request(new URL(url, 'http://localhost'), init));
+    // Model network delivery arriving after expiry while timers are not serviced.
+    now += 5_001;
+    return response;
+  } });
+  const expedition = createExpedition({ controller });
+  expedition.dispatch({ type: 'start' });
+  await settled(expedition);
+  expect(expedition.getSnapshot().decisionFailure).toBe('deadline');
+  expect(expedition.getSnapshot().currentAction).toBeNull();
+});

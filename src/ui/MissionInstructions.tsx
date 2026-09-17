@@ -13,6 +13,6 @@ export function MissionInstructions({ snapshot, dispatch }: { snapshot: Expediti
     <p className="memory-note" aria-label="Instruction status">{snapshot.reconsiderationReason === 'instructions-changed' && snapshot.status !== 'ready'
       ? 'Instructions saved. Reconsidering at the next safe waypoint; short interactions finish first.'
       : `Instructions saved · Version ${snapshot.instructionsVersion}.`}</p>
-    <p className="memory-note">The baseline receives your instructions and reconsiders using its fixed rules; it does not interpret free-form preferences. The scientific objective stays fixed.</p>
+    <p className="memory-note">{snapshot.controller === 'typesafe' ? 'TypeSafe uses your instructions when choosing its next action.' : 'The baseline receives your instructions and reconsiders using its fixed rules; it does not interpret free-form preferences.'} The scientific objective stays fixed.</p>
   </form>;
 }

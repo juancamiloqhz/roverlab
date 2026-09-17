@@ -14,9 +14,11 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
-  webServer: {
-    command: 'bun run dev --port 4173 --strictPort',
+  webServer: [{
+    command: 'bun browser/decision-server.ts',
+    url: 'http://127.0.0.1:4174/health',
+  }, {
+    command: 'ROVERLAB_BACKEND_URL=http://127.0.0.1:4174 bun run dev --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
-    reuseExistingServer: !process.env.CI,
-  },
+  }],
 });

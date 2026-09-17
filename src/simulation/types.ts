@@ -1,3 +1,5 @@
+import type { DecisionFailure, DecisionOutcome } from '../../shared/decisions';
+
 export type Position = { x: number; z: number };
 export type ScientificObjective = 'past-water' | 'unusual-minerals';
 export type SampleClassification = 'unrelated' | 'suggestive' | 'strong-evidence';
@@ -38,17 +40,21 @@ export type Action =
   | { kind: 'wait'; durationMs: number };
 export type ActionCandidate = Action & { id: string };
 export type ExpeditionController = {
-  id: 'baseline' | 'scripted';
-  decide(input: ControllerInput): string | Promise<string>;
+  id: 'baseline' | 'scripted' | 'typesafe';
+  decide(input: ControllerInput, context: { signal: AbortSignal; reserveAttempt(): boolean }): string | Promise<string | DecisionOutcome>;
 };
 export type DecisionReason = 'start' | 'action-completed' | 'instructions-changed' | 'new-observations';
 export type Decision = {
   reason: DecisionReason;
-  id: number; controller: 'baseline' | 'scripted';
-  input: ControllerInput; status: 'pending' | 'applied' | 'discarded' | 'invalid';
+  id: number; controller: ExpeditionController['id'];
+  input: ControllerInput; status: 'pending' | 'applied' | 'discarded' | 'invalid' | 'failed';
   action?: Action;
   selectedCandidateId?: string;
   latencyMs?: number;
+  inferenceAttempts: number;
+  probabilities?: Record<string, number>;
+  confidence?: number;
+  failure?: DecisionFailure;
 };
 export type ControllerInput = {
   remainingMs: number;
@@ -74,8 +80,13 @@ export type ExpeditionCommand =
   | { type: 'start' | 'pause' | 'resume' | 'reset' | 'stop' }
   | { type: 'set-instructions'; instructions: string }
   | { type: 'set-objective'; objective: ScientificObjective }
+  | { type: 'set-controller'; controller: 'baseline' | 'typesafe' }
   | { type: 'set-speed'; speed: PlaybackSpeed };
 export type ExpeditionSnapshot = {
+  controller: ExpeditionController['id'];
+  inferenceAttempts: number;
+  inferenceLatencyMs: number;
+  decisionFailure: DecisionFailure | null;
   instructions: string;
   instructionsVersion: number;
   decisionPending: boolean;
@@ -107,6 +118,9 @@ export type ExpeditionSnapshot = {
   memory: Observation[];
 };
 export type EventDetail =
+  | { type: 'controller-selected'; controller: ExpeditionController['id'] }
+  | { type: 'inference-attempt'; decisionId: number; attempt: number; controller: ExpeditionController['id'] }
+  | { type: 'decision-settled'; decision: Decision }
   | { type: 'instructions-changed'; instructions: string; version: number }
   | { type: 'energy-changed'; source: 'movement' | 'recharge'; battery: number; energyUsed: number }
   | { type: 'created' | 'started' | 'paused' | 'resumed' }
@@ -119,7 +133,7 @@ export type EventDetail =
   | { type: 'discovered'; observations: Observation[] }
   | { type: 'decision-requested'; decision: Decision }
   | { type: 'decision-discarded' | 'decision-invalid'; decisionId: number }
-  | { type: 'decision-made'; input: ControllerInput; action: Action; controller: ExpeditionController['id']; decisionId: number; selectedCandidateId: string; latencyMs: number }
+  | { type: 'decision-made'; input: ControllerInput; action: Action; controller: ExpeditionController['id']; decisionId: number; selectedCandidateId: string; latencyMs: number; inferenceAttempts: number; probabilities?: Record<string, number>; confidence?: number }
   | { type: 'action-started' | 'action-completed' | 'action-cancelled'; action: Action; controller: ExpeditionController['id'] }
   | { type: 'ended'; condition: EndingCondition };
 export type ExpeditionEvent = EventDetail & { sequence: number; expedition: number; atMs: number };

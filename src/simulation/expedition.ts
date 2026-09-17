@@ -1,4 +1,5 @@
 import { chooseBaselineAction } from '../controllers/baseline';
+import { INFERENCE_LIMIT, type DecisionOutcome } from '../../shared/decisions';
 import { findRoute, movementEnergy, positionKey, travelTimeMs } from './navigation';
 import { explorationCandidates, knownTerrain, observe, scienceCandidates } from './perception';
 import { authoredScenario } from './scenario';
@@ -13,14 +14,15 @@ const COLLECT_MS = 4_000;
 const RECHARGE_PER_SECOND = 5;
 const roundEnergy = (value: number) => Math.round(value * 1e9) / 1e9;
 
-export function createExpedition(options: { scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController } = {}) {
+export function createExpedition(options: { scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController } = {}) {
   const scenario = structuredClone(options.scenario ?? authoredScenario);
   let objective = options.objective ?? 'past-water';
   let instructions = '';
-  const controller: ExpeditionController = options.controller ?? { id: 'baseline', decide: input => chooseBaselineAction(input).id };
+  const baseline: ExpeditionController = { id: 'baseline', decide: input => chooseBaselineAction(input).id };
+  let controller = options.controller ?? baseline;
   let decisions: Decision[] = [];
   const decisionListeners = new Set<() => void>();
-  let inFlight: { decision: Decision; expedition: number } | null = null;
+  let inFlight: { decision: Decision; expedition: number; abort: AbortController } | null = null;
   const startingConditions = {
     scenario, objective, instructions, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
     travelTimeMs: { plain: travelTimeMs('plain'), rough: travelTimeMs('rough') },
@@ -38,6 +40,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
 
   function initialState(): ExpeditionSnapshot {
     return {
+      controller: controller.id, inferenceAttempts: 0, inferenceLatencyMs: 0, decisionFailure: null,
       instructions, instructionsVersion: 0, decisionRevision: 0, reconsiderationReason: null, decisionPending: inFlight !== null,
       battery: 100, batteryCapacity: 100, energyUsed: 0,
       objective, rubric: structuredClone(scienceRubric), cargo: [], cargoCapacity: 2,
@@ -67,7 +70,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
   }
 
   function selectAction() {
-    if (inFlight || state.status !== 'running' || state.currentAction) return;
+    if (inFlight || state.status !== 'running' || state.currentAction || state.decisionFailure) return;
     const input: ControllerInput = structuredClone({
       instructions: state.instructions, instructionsVersion: state.instructionsVersion,
       battery: state.battery, batteryCapacity: state.batteryCapacity,
@@ -76,22 +79,33 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       objective: state.objective, cargo: state.cargo, cargoCapacity: state.cargoCapacity,
       observations: state.observations, memory: state.memory, candidates: availableCandidates(), previousAction,
     });
-    const decision: Decision = { reason: state.reconsiderationReason ?? 'action-completed', id: decisions.length + 1, input, controller: controller.id, status: 'pending' };
+    const decision: Decision = { reason: state.reconsiderationReason ?? 'action-completed', id: decisions.length + 1, input, controller: controller.id, status: 'pending', inferenceAttempts: 0 };
     state.reconsiderationReason = null;
     decisions.push(decision);
     state.decisionRevision++;
-    inFlight = { decision, expedition };
+    const request = { decision, expedition, abort: new AbortController() };
+    inFlight = request;
     state.decisionPending = true;
     record({ type: 'decision-requested', decision });
     const requestedAt = performance.now();
     try {
-      const result = controller.decide(structuredClone(input));
+      const result = controller.decide(structuredClone(input), {
+        signal: request.abort.signal,
+        reserveAttempt() {
+          if (request !== inFlight || request.abort.signal.aborted || state.inferenceAttempts >= INFERENCE_LIMIT) return false;
+          state.inferenceAttempts++;
+          decision.inferenceAttempts++;
+          state.decisionRevision++;
+          record({ type: 'inference-attempt', decisionId: decision.id, attempt: state.inferenceAttempts, controller: decision.controller });
+          return true;
+        },
+      });
       if (typeof result === 'string') applyDecision(result, 0);
       else {
         // Discard the remainder of a scheduler batch at the asynchronous boundary.
         // It must never be replayed as catch-up after a pending decision.
         pendingMs %= STEP_MS;
-        const settle = (id: string | null) => {
+        const settle = (id: string | DecisionOutcome | null) => {
           applyDecision(id, performance.now() - requestedAt);
           // Let the wall-time scheduler reset its anchor at the exact end of the freeze.
           for (const listener of decisionListeners) listener();
@@ -103,25 +117,38 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     }
   }
 
-  function applyDecision(candidateId: string | null, latencyMs: number) {
+  function applyDecision(result: string | DecisionOutcome | null, latencyMs: number) {
     const request = inFlight!;
     const decision = request.decision;
     inFlight = null;
     state.decisionPending = false;
+    decision.latencyMs = latencyMs;
+    if (request.expedition === expedition) {
+      state.decisionRevision++;
+      if (decision.controller === 'typesafe') state.inferenceLatencyMs += latencyMs;
+    }
     if (request.expedition !== expedition || decision.input.instructionsVersion !== state.instructionsVersion
       || state.status === 'ended' || state.status === 'ready' || decision.status === 'discarded') {
+      events.push({ type: 'decision-settled', decision: structuredClone(decision), expedition: request.expedition, atMs: decision.input.atMs, sequence: events.length });
       selectAction();
       return;
     }
+    const outcome: DecisionOutcome = typeof result === 'string' ? { selectedCandidateId: result } : result ?? { failure: 'invalid-output' };
+    const candidateId = outcome.selectedCandidateId;
+    decision.probabilities = outcome.probabilities;
+    decision.confidence = outcome.confidence;
     // Only the simulator's complete candidate is executable; never trust controller-owned objects.
     const offered = decision.input.candidates.find(candidate => candidate.id === candidateId);
     const action = availableCandidates().find(candidate => candidate.id === candidateId);
-    if (!offered || !action || JSON.stringify(offered) !== JSON.stringify(action)) {
+    if (outcome.failure || !offered || !action || JSON.stringify(offered) !== JSON.stringify(action)) {
       state.decisionRevision++;
-      decision.status = 'invalid';
+      decision.failure = outcome.failure ?? 'invalid-output';
+      decision.status = decision.failure === 'invalid-output' ? 'invalid' : 'failed';
       decision.latencyMs = latencyMs;
       state.status = 'paused';
+      state.decisionFailure = decision.failure;
       record({ type: 'decision-invalid', decisionId: decision.id });
+      record({ type: 'decision-settled', decision });
       return;
     }
     state.decisionRevision++;
@@ -130,7 +157,8 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
     decision.action = action;
     decision.latencyMs = latencyMs;
     record({ type: 'decision-made', input: decision.input, action, controller: controller.id,
-      decisionId: decision.id, selectedCandidateId: action.id, latencyMs });
+      decisionId: decision.id, selectedCandidateId: action.id, latencyMs, inferenceAttempts: decision.inferenceAttempts,
+      probabilities: decision.probabilities, confidence: decision.confidence });
     state.currentAction = action;
     actionProgressMs = 0;
     route = [];
@@ -146,6 +174,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       state.decisionRevision++;
       inFlight.decision.status = 'discarded';
       record({ type: 'decision-discarded', decisionId: inFlight.decision.id });
+      inFlight.abort.abort();
     }
   }
 
@@ -301,7 +330,11 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       decisionListeners.add(listener);
       return () => { decisionListeners.delete(listener); };
     },
-    getRecord: () => structuredClone({ startingConditions, events }),
+    getRecord: () => structuredClone({ startingConditions, events, results: {
+      controller: state.controller, inferenceAttempts: state.inferenceAttempts, inferenceLatencyMs: state.inferenceLatencyMs,
+      endingCondition: state.endingCondition, scienceScore: state.scienceScore, energyUsed: state.energyUsed,
+      discoveryCount: state.discoveryCount, inspectionCount: state.inspectionCount,
+    } }),
     dispatch(command: ExpeditionCommand) {
       if (command.type === 'set-instructions' && state.status !== 'ended' && command.instructions !== instructions) {
         instructions = command.instructions;
@@ -312,6 +345,13 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
         record({ type: 'instructions-changed', instructions, version: state.instructionsVersion });
         reconsiderAtWaypoint();
         selectAction();
+      } else if (command.type === 'set-controller' && state.status === 'ready') {
+        const next = command.controller === 'baseline' ? baseline : options.typesafeController;
+        if (next && next.id !== controller.id) {
+          controller = next;
+          state.controller = controller.id;
+          record({ type: 'controller-selected', controller: controller.id });
+        }
       } else if (command.type === 'set-objective' && state.status === 'ready' && command.objective !== state.objective) {
         objective = command.objective;
         state.objective = objective;
@@ -324,7 +364,7 @@ export function createExpedition(options: { scenario?: Scenario; objective?: Sci
       } else if (command.type === 'pause' && state.status === 'running') {
         state.status = 'paused';
         record({ type: 'paused' });
-      } else if (command.type === 'resume' && state.status === 'paused') {
+      } else if (command.type === 'resume' && state.status === 'paused' && !state.decisionFailure) {
         state.status = 'running';
         record({ type: 'resumed' });
         selectAction();

@@ -9,6 +9,8 @@
   },
   "scripts": {
     "dev": "bunx --bun vite --host 127.0.0.1",
+    "dev:server": "bun --watch server/index.ts",
+    "start:server": "bun server/index.ts",
     "build": "bunx --bun vite build",
     "preview": "bunx --bun vite preview --host 127.0.0.1",
     "typecheck": "bunx --bun tsc --noEmit",
@@ -19,9 +21,11 @@
   "dependencies": {
     "@react-three/drei": "10",
     "@react-three/fiber": "9",
+    "@typesafe-ai/sdk": "^0.6.0",
     "react": "19.2",
     "react-dom": "19.2",
-    "three": "0.183"
+    "three": "0.183",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@playwright/test": "1.58",

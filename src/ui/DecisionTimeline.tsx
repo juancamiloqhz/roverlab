@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { scientificObjectives } from '../simulation/science';
 import type { Action, Decision, Observation } from '../simulation/types';
+import { failureMessages } from '../../shared/decisions';
+import { controllerLabels } from './controllerLabels';
 
 const seconds = (ms: number) => `${(ms / 1_000).toFixed(1)} s`;
 const actionName = (action: Action) => 'target' in action
@@ -29,7 +31,9 @@ function DecisionEntry({ decision }: { decision: Decision }) {
   return <li><details onToggle={event => setOpen(event.currentTarget.open)}>
     <summary>Decision {decision.id} · {seconds(input.atMs)} <span>{decision.action ? actionName(decision.action) : decision.status}</span></summary>
     {open && <div className="decision-details" aria-label={`Decision ${decision.id} details`}>
-      <p><strong>{decision.controller === 'baseline' ? 'Baseline controller' : 'Scripted verification controller'}</strong> · {reasons[decision.reason]} · {decision.status}</p>
+      <p><strong>{controllerLabels[decision.controller]}</strong> · {reasons[decision.reason]} · {decision.status}</p>
+      {decision.failure && <p>{failureMessages[decision.failure]}</p>}
+      <p>Inference attempts: {decision.inferenceAttempts}</p>
       <p>Selected action: <strong>{decision.action ? actionName(decision.action) : 'None'}</strong></p>
       <p>{scientificObjectives[input.objective]} · Instructions version {input.instructionsVersion}</p>
       <blockquote>{input.instructions || 'No mission instructions supplied.'}</blockquote>
@@ -39,11 +43,12 @@ function DecisionEntry({ decision }: { decision: Decision }) {
       {decision.latencyMs !== undefined && <p>Request latency (wall time): {decision.latencyMs.toFixed(1)} ms</p>}
       <div className="decision-table"><table aria-label="Available actions">
         <caption>Available complete actions · {input.candidates.length}</caption>
-        <thead><tr><th>Candidate identity</th><th>Action and target</th><th>Known route estimate</th><th>Selection</th></tr></thead>
+        <thead><tr><th>Candidate identity</th><th>Action and target</th><th>Known route estimate</th><th>Selection</th>{decision.probabilities && <th>Returned probability</th>}</tr></thead>
         <tbody>{input.candidates.map(candidate => <tr key={candidate.id}>
           <td>{candidate.id}</td><td>{actionName(candidate)}</td>
           <td>{'target' in candidate ? `${candidate.routeEstimate.distanceCells} cells · ${seconds(candidate.routeEstimate.durationMs)} travel · ${candidate.routeEstimate.energy} energy` : 'No travel'}</td>
           <td>{candidate.id === decision.selectedCandidateId ? 'Selected' : '—'}</td>
+          {decision.probabilities && <td>{(decision.probabilities[candidate.id]! * 100).toFixed(2)}%</td>}
         </tr>)}</tbody>
       </table></div>
       <ObservationTable title="Observations used" observations={input.observations} />
@@ -55,7 +60,7 @@ function DecisionEntry({ decision }: { decision: Decision }) {
 export function DecisionTimeline({ decisions }: { decisions: Decision[] }) {
   return <section className="decision-timeline" aria-label="Decision timeline">
     <h3>Decision timeline <span>{decisions.length}</span></h3>
-    <p className="memory-note">Baseline decisions use fixed rules. No model probabilities or reasoning are produced. Expand a decision to inspect the information used at that moment.</p>
+    <p className="memory-note">Baseline decisions use fixed rules. No model probabilities or reasoning are produced for baseline decisions. TypeSafe probabilities compare the offered choices; they are not utility, science score, a guarantee of correctness, or generated reasoning. A valid uncertain choice continues autonomously.</p>
     {decisions.length ? <ol>{decisions.map(decision => <DecisionEntry key={decision.id} decision={decision} />)}</ol>
       : <p className="memory-note">Decisions will appear when the expedition starts.</p>}
   </section>;

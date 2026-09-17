@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createExpedition, type ExpeditionSession } from '../simulation/expedition';
 import type { ExpeditionCommand } from '../simulation/types';
+import { createTypeSafeController } from '../controllers/typesafe';
 
-export function useExpedition(createSession: () => ExpeditionSession = createExpedition) {
+const createDefaultSession = () => createExpedition({ typesafeController: createTypeSafeController() });
+export function useExpedition(createSession: () => ExpeditionSession = createDefaultSession) {
   const [session] = useState(createSession);
   const [snapshot, setSnapshot] = useState(session.getSnapshot);
   const [decisions, setDecisions] = useState(session.getDecisions);
