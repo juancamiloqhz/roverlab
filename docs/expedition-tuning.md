@@ -11,7 +11,7 @@ bun test tests/tuning.test.ts
 bun run test:browser browser/comparison.spec.ts browser/records.spec.ts
 ```
 
-The script prints one JSON result per expedition. The survey script delivers its first discovered sample, recharges, surveys east, then heads north while carrying the next sample. It selects only supplied candidates using rover memory; it has no hidden positions, properties, or routes. This intentionally directed survey tests feasibility, not a generally optimal strategy. The baseline remains unchanged and does not interpret mission-instruction text.
+The script prints one JSON result per expedition. The survey script delivers its first discovered sample, recharges, surveys east, then heads north while carrying the next sample. It selects only supplied candidates using rover memory; it has no hidden positions, properties, or routes. This intentionally directed survey tests feasibility, not a generally optimal strategy. The current baseline uses ticket 05's evidence and resource rules; it still does not interpret free-text mission instructions.
 
 The sweep compares Sample C at z=4, 5, and 6, storm durations of 30, 45, and 60 seconds, and movement multipliers of 2, 3, and 4. Action durations and energy rates were evaluated through completed trips and controlled routes and retained. Tests exercise outcomes at the session boundary; browser tests exercise saved/imported comparisons.
 
@@ -36,6 +36,8 @@ The earlier layout permits a clear-weather three-sample delivery at 261.2 second
 With C at z=5, the waiting strategy delivers at 283.2 seconds under a 30-second storm, 298.2 under the chosen 45-second storm, and misses delivery under a 60-second storm. The unchecked crossing strategy strands at 220.2, 185.2, and 150.2 seconds for energy multipliers 2, 3, and 4 respectively. The retained ×3 / 45-second combination makes the hazard consequential while leaving an attainable response.
 
 ## Representative outcomes
+
+The table below preserves the first-release measurements. Its baseline row predates `evidence-priorities-v1`. Running the script now uses the ticket 05 baseline, whose [current measured outcomes](baseline-strategy.md#deterministic-checks-and-limits) distinguish the two objectives and reserve a return trip. The scripted survey measurements remain unchanged.
 
 These runs use the chosen layout. A storm, where listed, is introduced at expedition time 90 seconds. Scores are shown as past water / unusual minerals. Energy is accumulated consumption, including after any recharge; it is independent of final battery.
 
@@ -76,4 +78,4 @@ Select two entries in **Saved expeditions**, then **Compare selected expeditions
 
 Matching conditions help interpret differences; they do not establish that a controller or instruction caused a better result. An early manual stop, for example, remains visible in ending condition and elapsed expedition time.
 
-The record format remains version 1. Replay always uses the saved scenario, so earlier `ochre-basin-v4` histories retain their original Sample C position. Session checks replay both layouts at 1×, 2×, and 4× and compare every event, decision, and final result. Existing simulation, perception, storm, inference, and replay checks remain applicable.
+The original measurements used version 1 records. Current exports use version 6 and retain baseline rule evidence. Replay supports versions 1 through 6 and always uses the saved scenario, so earlier `ochre-basin-v4` histories retain their original Sample C position. Session checks replay both layouts at 1×, 2×, and 4× and compare every event, decision, and final result. Existing simulation, perception, storm, inference, and replay checks remain applicable.

@@ -1,7 +1,7 @@
 import { missionInstructions, missionPreset, type MissionPreferences } from '../../shared/mission';
 import { defaultInferenceLimits, inferenceGuard, inferenceLimitsSchema } from '../../shared/limits';
 import { canUpdateEvidence, sameAttempt, summarizeUsage, type AttemptEvidence } from '../../shared/inference';
-import { chooseBaselineAction } from '../controllers/baseline';
+import { chooseBaselineDecision } from '../controllers/baseline';
 import { INFERENCE_LIMIT, MAX_MISSION_INSTRUCTIONS_LENGTH, type DecisionOutcome } from '../../shared/decisions';
 import { findRoute, movementEnergy, positionKey, travelCost, travelTimeMs } from './navigation';
 import { explorationCandidates, knownTerrain, observe, scienceCandidates } from './perception';
@@ -48,7 +48,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   let objective = replay?.source.startingConditions.objective ?? options.objective ?? 'past-water';
   let instructions = replay?.source.startingConditions.instructions ?? '';
   let mission: MissionPreferences = structuredClone(replay?.source.startingConditions.mission ?? { mode: 'free-text', instructions });
-  const baseline: ExpeditionController = { id: 'baseline', decide: input => chooseBaselineAction(input).id };
+  const baseline: ExpeditionController = { id: 'baseline', decide: input => {
+    const selected = chooseBaselineDecision(input);
+    return { selectedCandidateId: selected.action.id, baseline: selected.evidence };
+  } };
   const recordedController = (id: ExpeditionController['id']): ExpeditionController => ({ id, decide() {
     throw new Error('Replay cannot request a live controller decision.');
   } });
@@ -234,7 +237,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         },
         reportAttempt: evidence => accountAttempt(evidence, accountingOrigin),
       });
-      if (typeof result === 'string') applyDecision(result, 0);
+      if (typeof result === 'string' || !('then' in result)) applyDecision(result, 0);
       else {
         // Discard the remainder of a scheduler batch at the asynchronous boundary.
         // It must never be replayed as catch-up after a pending decision.
@@ -312,10 +315,12 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     decision.status = 'applied';
     decision.selectedCandidateId = action.id;
     decision.action = action;
+    if (decision.controller === 'baseline' && outcome.baseline) decision.baseline = structuredClone(outcome.baseline);
     decision.latencyMs = latencyMs;
     record({ type: 'decision-made', input: decision.input, action, controller: controller.id,
       decisionId: decision.id, selectedCandidateId: action.id, latencyMs, inferenceAttempts: decision.inferenceAttempts,
-      probabilities: decision.probabilities, confidence: decision.confidence });
+      probabilities: decision.probabilities, confidence: decision.confidence,
+      ...(decision.baseline ? { baseline: decision.baseline } : {}) });
     state.currentAction = action;
     actionController = controller.id;
     actionProgressMs = 0;
@@ -458,7 +463,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 5, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 6, id: expeditionId, completedAt: new Date().toISOString(),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();
@@ -748,7 +753,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         case 'action-cancelled':
         case 'ended': session.dispatch({ type: 'stop' }); break;
         case 'decision-made': applyDecision({ selectedCandidateId: event.selectedCandidateId,
-          probabilities: event.probabilities, confidence: event.confidence }, event.latencyMs); break;
+          probabilities: event.probabilities, confidence: event.confidence, baseline: event.baseline }, event.latencyMs); break;
         default: throw new Error(`Cannot replay this expedition: unsupported ${event.type} event at ${event.atMs} ms.`);
       }
       if (replay.next === event) throw new Error(`Cannot replay this expedition: ${event.type} cannot execute at ${event.atMs} ms.`);

@@ -83,7 +83,7 @@ test('mission control selects objectives, sees inspection and cargo, and scores 
   await page.clock.install();
   await page.goto('/');
   const objective = page.getByRole('combobox', { name: 'Scientific objective' });
-  for (const [value, points] of [['past-water', '10'], ['unusual-minerals', '0']]) {
+  for (const [value, sample] of [['past-water', 'A'], ['unusual-minerals', 'B']] as const) {
     await objective.selectOption(value!);
     await page.getByRole('button', { name: 'Start expedition' }).click();
     await expect(objective).toBeDisabled();
@@ -94,18 +94,24 @@ test('mission control selects objectives, sees inspection and cargo, and scores 
     await page.clock.fastForward(6_000);
     await expect(page.getByText(/Layered sediment/)).toBeVisible();
     await expect(page.getByLabel('Samples inspected')).toHaveText('1');
-    await expect(page.getByLabel('Current action')).toContainText('Collect · Sample A');
+    if (value === 'unusual-minerals') {
+      await expect(page.getByLabel('Current action')).toContainText('Explore');
+      await expect(page.getByLabel('Cargo capacity')).toHaveText('0 / 2');
+      await page.clock.fastForward(54_000);
+      await expect(page.getByLabel('Samples inspected')).toHaveText('2');
+    }
+    await expect(page.getByLabel('Current action')).toContainText(`Collect · Sample ${sample}`);
     await page.clock.fastForward(4_000);
     await expect(page.getByLabel('Cargo capacity')).toHaveText('1 / 2');
     await expect(page.getByLabel('Science score', { exact: true })).toHaveText('0');
     await expect(page.getByLabel('Current action')).toHaveText('Return to base');
-    await expect(page.getByRole('region', { name: 'Planetary scene' }).getByText(/Sample A/)).toHaveCount(0);
-    await page.clock.fastForward(16_000);
+    await expect(page.getByRole('region', { name: 'Planetary scene' }).getByText(`Sample ${sample}`, { exact: true })).toHaveCount(0);
+    await page.clock.fastForward(value === 'past-water' ? 16_000 : 56_000);
     await expect(page.getByLabel('Cargo capacity')).toHaveText('0 / 2');
-    await expect(page.getByLabel('Science score', { exact: true })).toHaveText(points!);
-    await expect(page.getByLabel('Sample A observation')).toContainText('Delivered');
+    await expect(page.getByLabel('Science score', { exact: true })).toHaveText('10');
+    await expect(page.getByLabel(`Sample ${sample} observation`)).toContainText('Delivered');
     await page.getByRole('button', { name: 'Stop expedition' }).click();
-    await expect(page.getByRole('region', { name: 'Expedition results' })).toContainText(`${points} science points`);
+    await expect(page.getByRole('region', { name: 'Expedition results' })).toContainText('10 science points');
     await expect(objective).toBeDisabled();
     await page.screenshot({ path: `test-results/science-${value}.png`, fullPage: true });
     await page.getByRole('button', { name: 'Reset expedition' }).click();

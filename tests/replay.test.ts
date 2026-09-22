@@ -6,6 +6,7 @@ import { createDecisionHandler } from '../server/decisions';
 import { chooseBaselineAction } from '../src/controllers/baseline';
 import type { ExpeditionSession } from '../src/simulation/expedition';
 import type { ExpeditionRecord } from '../src/simulation/types';
+import { greedySurvey } from './fixtures/greedy-survey';
 
 async function advanceTo(session: ExpeditionSession, atMs: number) {
   for (let steps = 0; steps < 2000; steps++) {
@@ -110,6 +111,8 @@ test.each([false, true])('TypeSafe choices and recovery replay without inference
   await advanceTo(live, 300_000);
   const record = importExpeditionRecord(exportExpeditionRecord(live.getCompletedRecords()[0]!));
   expect(record.results.controllerHistory.map(entry => entry.controller)).toEqual(mixed ? ['typesafe', 'baseline'] : ['typesafe']);
+  expect(record.decisions.filter(decision => decision.controller === 'baseline').every(decision => decision.baseline?.version === 'evidence-priorities-v1')).toBe(true);
+  expect(record.decisions.filter(decision => decision.controller === 'typesafe').every(decision => !decision.baseline)).toBe(true);
   expect(record.results.inspectionCount).toBeGreaterThan(0);
   expect(record.events.some(event => event.type === 'storm-expired')).toBe(true);
   const recordedCalls = calls;
@@ -180,7 +183,7 @@ test('records with unsupported settings or irreproducible history are rejected b
 });
 
 test('stopping and restarting replay preserves the saved custom scenario and stranded result', () => {
-  const live = createExpedition({ scenario: {
+  const live = createExpedition({ controller: greedySurvey, scenario: {
     id: 'replay-corridor', name: 'Recorded corridor', width: 54, depth: 1, base: { x: 0, z: 0 },
     sensorRange: 53, obstacles: [], roughTerrain: [],
     samples: [1, 52].map(x => ({ id: String(x), label: `Sample ${x}`, position: { x, z: 0 }, properties: ['Layered sediment'],

@@ -148,7 +148,8 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
         if (!decision || pendingId !== decision.id || decision.status !== 'pending' || event.controller !== controller
           || !sameRecordData(event.input, decision.input) || event.inferenceAttempts !== decision.inferenceAttempts) return false;
         decisions.set(decision.id, { ...decision, status: 'applied', action: event.action, selectedCandidateId: event.selectedCandidateId,
-          latencyMs: event.latencyMs, probabilities: event.probabilities, confidence: event.confidence });
+          latencyMs: event.latencyMs, probabilities: event.probabilities, confidence: event.confidence,
+          ...(event.baseline ? { baseline: event.baseline } : {}) });
         pendingId = null;
         selectedAction = event.action;
         break;

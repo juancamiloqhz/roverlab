@@ -40,7 +40,7 @@ export function MissionPreferences({ snapshot }: { snapshot: ExpeditionSnapshot 
     <MissionEvidence mission={mission.requested} />
     {mission.requested.preferences.mode === 'free-text'
       ? <p>The baseline cannot interpret arbitrary free text. This is not a matched-priority benchmark.</p>
-      : <p>Both controllers receive the same preset settings. The baseline currently uses fixed rules; it does not yet adapt its strategy to these settings.</p>}
+      : <p>Both controllers receive the same preset settings. Inspect the baseline version and its use of those settings in the decision timeline. Older records may lack rule evidence.</p>}
     <p>The scientific objective and delivery rubric stay fixed during the expedition.</p>
     <details><summary>Mission preference history</summary>
       <ol>{mission.history.map((entry, index) => <li key={entry.version}>

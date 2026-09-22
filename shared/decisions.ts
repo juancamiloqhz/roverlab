@@ -83,7 +83,7 @@ export const responseSchema = z.discriminatedUnion('ok', [
   z.strictObject({ ok: z.literal(false), failure: failureSchema, retryable: z.boolean(), evidence: attemptEvidenceSchema.nullable() }),
 ]);
 export type DecisionResponse = z.infer<typeof responseSchema>;
-export type DecisionOutcome = { selectedCandidateId?: string; probabilities?: Record<string, number>; confidence?: number; failure?: DecisionFailure };
+export type DecisionOutcome = { selectedCandidateId?: string; probabilities?: Record<string, number>; confidence?: number; failure?: DecisionFailure; baseline?: import('./baseline').BaselineEvidence };
 export type DecisionClock = { now(): number; after(ms: number, callback: () => void): () => void };
 export const wallClock: DecisionClock = {
   now: () => Date.now(),

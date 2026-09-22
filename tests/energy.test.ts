@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { createExpedition } from '../src/simulation/expedition';
 import type { Scenario } from '../src/simulation/types';
+import { greedySurvey } from './fixtures/greedy-survey';
 
 const corridor: Scenario = {
   id: 'energy-corridor', name: 'Energy corridor', width: 5, depth: 1,
@@ -75,7 +76,7 @@ test('a baseline expedition unloads, recharges separately, and makes another del
 });
 
 test('an unaffordable route remains a choice and strands the rover with uncredited cargo', () => {
-  const expedition = createExpedition({ scenario: {
+  const expedition = createExpedition({ controller: greedySurvey, scenario: {
     ...deliveryScenario, width: 54, sensorRange: 53,
     samples: deliveryScenario.samples.slice(0, 2).map((sample, index) => ({ ...sample, position: { x: index ? 52 : 1, z: 0 } })),
   } });
@@ -92,7 +93,7 @@ test('an unaffordable route remains a choice and strands the rover with uncredit
   });
   const events = expedition.getRecord().events;
   expect(events.slice(-2)).toMatchObject([
-    { type: 'action-cancelled', action: { kind: 'inspect', target: { id: '1' } }, controller: 'baseline' },
+    { type: 'action-cancelled', action: { kind: 'inspect', target: { id: '1' } }, controller: 'scripted' },
     { type: 'ended', condition: 'stranded' },
   ]);
   expect(events.filter(event => event.type === 'energy-changed').every(event => event.battery >= 0)).toBe(true);
@@ -103,8 +104,8 @@ test('an unaffordable route remains a choice and strands the rover with uncredit
   expect(expedition.getSnapshot()).toMatchObject({ status: 'ready', battery: 100, energyUsed: 0, cargo: [], endingCondition: null });
 });
 
-test('the baseline chooses an energy return and an empty battery can recharge at base', () => {
-  const expedition = createExpedition({ scenario: {
+test('a scripted energy return can arrive empty and recharge at base', () => {
+  const expedition = createExpedition({ controller: greedySurvey, scenario: {
     ...deliveryScenario, width: 26, sensorRange: 25,
     samples: [{ ...deliveryScenario.samples[0]!, position: { x: 25, z: 0 } }],
   } });
@@ -127,7 +128,7 @@ test('the baseline chooses an energy return and an empty battery can recharge at
 });
 
 test('timeout cancels an unfinished inspection without revealing properties or earning more science', () => {
-  const expedition = createExpedition({ scenario: {
+  const expedition = createExpedition({ controller: greedySurvey, scenario: {
     ...deliveryScenario, width: 50, sensorRange: 49,
     samples: deliveryScenario.samples.map((sample, index) => ({ ...sample, position: { x: [7, 9, 49][index]!, z: 0 } })),
   } });

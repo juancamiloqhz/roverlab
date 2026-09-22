@@ -29,11 +29,12 @@ test('a baseline expedition reconsiders discoveries, delivers science, and ends 
   expect(record.events.at(-1)).toMatchObject({ type: 'ended', atMs: 300_000, condition: 'timeout' });
   expect(record.events.every((event, index) => event.sequence === index && (index === 0 || event.atMs >= record.events[index - 1]!.atMs))).toBe(true);
   expect(new Set(record.events.flatMap(event => event.type === 'action-started' ? [event.action.kind] : [])))
-    .toEqual(new Set(['explore', 'inspect', 'collect', 'return-to-base', 'recharge']));
+    .toEqual(new Set(['explore', 'inspect', 'collect', 'return-to-base', 'recharge', 'wait']));
   expect(record.events.some(event => event.type === 'action-cancelled' && event.action.kind === 'explore')).toBe(true);
   expect(expedition.getSnapshot().discoveryCount).toBeGreaterThan(0);
   expect(expedition.getSnapshot().deliveredSamples).toHaveLength(1);
-  expect(expedition.getSnapshot().memory.filter(item => item.kind === 'terrain').length).toBeGreaterThan(200);
+  expect(expedition.getSnapshot().memory.filter(item => item.kind === 'terrain').length)
+    .toBeGreaterThan(initial.memory.filter(item => item.kind === 'terrain').length);
   const ended = expedition.getSnapshot();
   expedition.advanceWallTime(50_000);
   expect(expedition.getSnapshot()).toEqual(ended);

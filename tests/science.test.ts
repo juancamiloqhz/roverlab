@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { createExpedition } from '../src/simulation/expedition';
 import { authoredScenario } from '../src/simulation/scenario';
 import type { Scenario } from '../src/simulation/types';
+import { greedySurvey } from './fixtures/greedy-survey';
 
 const corridor: Scenario = {
   id: 'science-corridor', name: 'Science corridor', width: 5, depth: 1,
@@ -43,7 +44,7 @@ test('mission control selects an objective before starting and must reset to cha
 test.each([
   ['past-water', [10, 0, 5]], ['unusual-minerals', [0, 10, 5]],
 ] as const)('two cargo slots require another trip and %s scores each authored classification once', (objective, scores) => {
-  const expedition = createExpedition({ objective, scenario: {
+  const expedition = createExpedition({ objective, controller: greedySurvey, scenario: {
     ...corridor, width: 6, sensorRange: 5, obstacles: [{ x: 4, z: 0 }],
     samples: [
       ...authoredScenario.samples.map((sample, index) => ({ ...sample, position: { x: index + 1, z: 0 } })),
@@ -130,7 +131,7 @@ test.each(['manual-stop', 'timeout'] as const)('%s leaves onboard cargo uncredit
     scenario.sensorRange = 22;
     scenario.samples = [19, 20, 21].map((x, index) => ({ ...corridor.samples[0]!, id: String(index), position: { x, z: 0 } }));
   }
-  const expedition = createExpedition({ scenario });
+  const expedition = createExpedition({ scenario, controller: ending === 'timeout' ? greedySurvey : undefined });
   expedition.dispatch({ type: 'start' });
   expedition.advanceWallTime(ending === 'timeout' ? 300_000 : 23_000);
   if (ending === 'manual-stop') expedition.dispatch({ type: 'stop' });

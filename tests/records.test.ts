@@ -12,7 +12,7 @@ test('completed expeditions retain their own starting conditions, final knowledg
   const final = expedition.getSnapshot();
   const [first] = expedition.getCompletedRecords();
   expect(first!.results).toEqual(final);
-  expect(first!.results).toMatchObject({ scienceScore: 0, inspectionCount: 1, deliveredSamples: [{ sampleId: 'a' }] });
+  expect(first!.results).toMatchObject({ scienceScore: 0, inspectionCount: 1, deliveredSamples: [] });
   expect(first!.decisions).toEqual(expedition.getDecisions());
   expect(first!.events).toEqual(expedition.getRecord().events);
   expect(first!.startingConditions.scenario.samples).toHaveLength(3);

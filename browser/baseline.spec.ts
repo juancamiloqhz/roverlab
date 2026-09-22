@@ -1,0 +1,34 @@
+import { expect, test } from '@playwright/test';
+
+test('a keyless baseline exposes its code rule and retains it in saved history and replay', async ({ page }) => {
+  let requests = 0;
+  await page.route('**/api/**', route => { requests++; return route.abort(); });
+  await page.clock.install();
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Mission mode', exact: true }).selectOption('preset');
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await page.clock.fastForward(22_000);
+  await page.getByRole('button', { name: 'Pause expedition' }).click();
+  const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await timeline.locator('summary').filter({ hasText: /collect · Sample A/ }).first().click();
+  await expect(timeline).toContainText('Baseline version: evidence-priorities-v1');
+  await expect(timeline).toContainText('Code rule: ranked-opportunity');
+  await expect(timeline).toContainText('not a prediction of success');
+  await expect(timeline.getByRole('table', { name: 'Baseline opportunity evidence' })).toContainText('Rounded grains deposited by flowing water');
+  await expect(timeline).toContainText('Shared preset settings');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/baseline-rule-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await page.reload();
+  await page.getByRole('button', { name: /^Open expedition / }).first().click();
+  const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
+  await saved.locator('summary').filter({ hasText: /collect · Sample A/ }).first().click();
+  await expect(saved).toContainText('Baseline version: evidence-priorities-v1');
+  await saved.getByRole('button', { name: 'Replay expedition', exact: true }).click();
+  await page.clock.fastForward(22_000);
+  const replay = page.getByRole('region', { name: 'Expedition replay', exact: true });
+  await replay.locator('summary').filter({ hasText: /collect · Sample A/ }).first().click();
+  await expect(replay).toContainText('Baseline version: evidence-priorities-v1');
+  expect(requests).toBe(0);
+});

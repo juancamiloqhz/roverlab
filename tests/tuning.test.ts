@@ -19,10 +19,10 @@ test('a deliberate two-trip survey can wait for a detected storm and deliver all
 test.each(['past-water', 'unusual-minerals'] as const)('baseline and deliberate surveys expose different science returns for %s', objective => {
   const baseline = runPlaytest({ strategy: 'baseline', objective });
   const survey = runPlaytest({ objective });
-  expect(baseline.results.deliveredSamples.map(sample => sample.sampleId)).toEqual(['a']);
-  expect(baseline.results.scienceScore).toBe(objective === 'past-water' ? 10 : 0);
-  expect(baseline.results.discoveryCount).toBe(3);
-  expect(baseline.results.inspectionCount).toBe(1);
+  expect(baseline.results.deliveredSamples.map(sample => sample.sampleId)).toEqual([objective === 'past-water' ? 'a' : 'b']);
+  expect(baseline.results.scienceScore).toBe(10);
+  expect(baseline.results.discoveryCount).toBe(objective === 'past-water' ? 1 : 2);
+  expect(baseline.results.inspectionCount).toBe(objective === 'past-water' ? 1 : 2);
   expect(survey.results.scienceScore).toBe(15);
   expect(survey.results.deliveredSamples.map(sample => [sample.sampleId, sample.deliveredAtMs])).toEqual([
     ['a', 42_000], ['b', 253_200], ['c', 253_200],

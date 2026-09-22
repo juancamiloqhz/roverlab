@@ -1,4 +1,5 @@
 import { MissionEvidence } from './MissionPreferences';
+import { BaselineRuleEvidence } from './BaselineRuleEvidence';
 import { DecisionUsage } from './InferenceUsage';
 import { Fragment, useState } from 'react';
 import { scientificObjectives } from '../simulation/science';
@@ -37,6 +38,7 @@ function DecisionEntry({ decision }: { decision: Decision }) {
       {decision.failure && <p>{failureMessages[decision.failure]}</p>}
       <DecisionUsage decision={decision} />
       <p>Selected action: <strong>{decision.action ? actionName(decision.action) : 'None'}</strong></p>
+      <BaselineRuleEvidence decision={decision} />
       <p>{scientificObjectives[input.objective]} · Instructions version {input.instructionsVersion}</p>
       {input.mission ? <MissionEvidence mission={input.mission} /> : <blockquote>{input.instructions || 'No mission instructions supplied.'}</blockquote>}
       <p>Battery {input.battery.toFixed(1)} / {input.batteryCapacity} · Energy used {input.energyUsed.toFixed(1)} · Cargo {input.cargo.length} / {input.cargoCapacity} · Remaining {seconds(input.remainingMs)}</p>

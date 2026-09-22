@@ -113,7 +113,8 @@ test('a newly detected wall blocks exploration without revealing or entering its
   expect(record.events.filter(event => event.type === 'discovered').flatMap(event => event.observations))
     .toContainEqual({ kind: 'terrain', id: 'cell:3,1', position: { x: 3, z: 1 }, blocked: true, terrain: 'plain', observedAtMs: 4_000 });
   const decisions = record.events.filter(event => event.type === 'decision-made');
-  expect(decisions.at(-1)?.input.candidates.map(action => action.kind)).toEqual(['return-to-base', 'wait']);
+  expect(expedition.getSnapshot().rover.position).toEqual({ x: 1, z: 1 });
+  expect(decisions.at(-1)?.input.candidates.map(action => action.kind)).toEqual(['wait']);
   expect(decisions.flatMap(event => event.input.candidates).filter(action => action.kind === 'explore').every(action => action.target.position.x < 3)).toBe(true);
   expect(expedition.getSnapshot().memory.some(item => item.kind === 'sample')).toBe(false);
 });

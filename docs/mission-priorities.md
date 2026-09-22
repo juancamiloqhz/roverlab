@@ -20,7 +20,7 @@ These weights express relative preferences, not probabilities, science points, o
 
 Balanced gives observed scientific opportunity the greatest emphasis while retaining delivery, energy, and exploration preferences. Conserve energy increases the energy emphasis and requested return margin. Explore more increases the emphasis on acquiring knowledge while retaining the same scientific objective and simulation rules.
 
-Ticket 04 supplies these settings and a Jev prompt that explains them. The current baseline receives them but still uses its existing fixed strategy. Ticket 05 owns the improved baseline interpretation. The interface discloses this limitation. Free-text mode also discloses that the baseline cannot interpret arbitrary instructions; such runs are not presented as matched-priority benchmarks.
+Ticket 04 supplies these settings and a Jev prompt that explains them. Ticket 05's [baseline rules](baseline-strategy.md) use the weights to rank observed scientific opportunities, exploration, delivery, and known route costs, with the reserve in their return planning. Free-text mode discloses that the baseline uses Balanced defaults and cannot interpret arbitrary instructions; such runs are not presented as matched-priority benchmarks.
 
 ## Observable adherence definitions, version 1
 
