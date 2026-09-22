@@ -183,7 +183,7 @@ test('a storm detected during a pending decision discards the obsolete response 
   expect(expedition.getSnapshot()).toEqual(pending);
   requests[1]!.resolve('inspect:a');
   await Promise.resolve();
-  expect(expedition.getDecisions()[1]).toMatchObject({ reason: 'storm-detected', status: 'applied' });
+  expect(expedition.getDecisions()[1]).toMatchObject({ input: { decisionBoundary: { triggers: ['start', 'storm-detected'] } }, status: 'applied' });
   expect(expedition.getRecord().events.filter(event => event.type === 'action-started')).toHaveLength(1);
 });
 

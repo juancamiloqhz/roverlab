@@ -123,7 +123,7 @@ test.each([false, true])('TypeSafe histories preserve actual probabilities, reco
   if (mixed) {
     expect(reopened.events.some(event => event.type === 'controller-changed')).toBe(true);
     expect(reopened.events.some(event => event.type === 'storm-detected')).toBe(true);
-    expect(reopened.decisions.some(decision => decision.reason === 'retry')).toBe(true);
+    expect(reopened.decisions.some(decision => decision.input.decisionBoundary?.triggers.includes('retry'))).toBe(true);
   }
   expect(calls).toBe(callsBeforeOpening);
 });

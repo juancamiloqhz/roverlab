@@ -36,7 +36,7 @@ test('a Jev choice retains confirmed outbound usage, identities and token-derive
   expect(attempt.submission.identity).toEqual(submissions[0].identity);
   expect(attempt.evidence).toMatchObject({ identity: attempt.submission.identity, dispatch: 'dispatched',
     requestedModel: 'jev-latest', resolvedModel: 'jev-1.13.0', providerRequestId: 'req-usage-1',
-    inputTokens: 1000, outputTokens: 40, promptVersion: 'rover-action-v2',
+    inputTokens: 1000, outputTokens: 40, promptVersion: 'rover-action-v3',
     pricing: { model: 'jev-1.13.0', inputPerMillion: 0.042, outputPerMillion: 0, currency: 'USD',
       source: 'https://docs.typesafe.ai/models' } });
   session.dispatch({ type: 'stop' });
@@ -44,7 +44,7 @@ test('a Jev choice retains confirmed outbound usage, identities and token-derive
   expect(record.id).toBe(attempt.submission.identity.expeditionId);
   const json = exportExpeditionRecord(record);
   const reopened = importExpeditionRecord(json);
-  expect(reopened.version).toBe(6);
+  expect(reopened.version).toBe(7);
   expect(reopened).toEqual(JSON.parse(json));
   const replay = createReplay(reopened);
   replay.dispatch({ type: 'start' });

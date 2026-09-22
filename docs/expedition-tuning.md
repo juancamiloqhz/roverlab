@@ -37,7 +37,7 @@ With C at z=5, the waiting strategy delivers at 283.2 seconds under a 30-second 
 
 ## Representative outcomes
 
-The table below preserves the first-release measurements. Its baseline row predates `evidence-priorities-v1`. Running the script now uses the ticket 05 baseline, whose [current measured outcomes](baseline-strategy.md#deterministic-checks-and-limits) distinguish the two objectives and reserve a return trip. The scripted survey measurements remain unchanged.
+The table below preserves the first-release measurements. Its baseline row predates `evidence-priorities-v1`. Running the script now uses the ticket 05 baseline, whose [current measured outcomes](baseline-strategy.md#deterministic-checks-and-limits) distinguish the two objectives and reserve a return trip. The scripted survey rows also predate ticket 06's decision cadence. Current results follow below.
 
 These runs use the chosen layout. A storm, where listed, is introduced at expedition time 90 seconds. Scores are shown as past water / unusual minerals. Energy is accumulated consumption, including after any recharge; it is independent of final battery.
 
@@ -53,6 +53,19 @@ These runs use the chosen layout. A storm, where listed, is introduced at expedi
 The first return alone consumes 16 seconds and eight energy units. The following recharge consumes 3.2 seconds. Skipping it saves time but strands this survey with two samples aboard. A clear survey's second trip consumes 94 units before reaching base; recharge and route choice matter despite its 46.8-second time margin. Delaying departure by 50 seconds shows how waiting can lose delivery credit without causing battery depletion. Waiting for the storm instead spends time to conserve enough energy to deliver, with only 1.8 seconds left.
 
 An attempted detour toward Sample B still crosses: the destination is inside the storm, so no route can avoid the region entirely. A requested strategy is not proof that a detour was offered or executed.
+
+## Ticket 06 cadence measurements
+
+The same world and controller scripts now use `meaningful-boundaries-v1`. Terrain discovery no longer cancels an in-progress route at every cell, so the directed survey does not repeatedly replan through newly known shortcuts. Its original successful measurements above are historical. Ticket 06 leaves the world and scripts' scientific preferences unchanged; larger-world tuning belongs to ticket 07.
+
+| Strategy | Delivered; last delivery | Score, water / minerals | Energy | Ending; uncredited cargo |
+| --- | --- | --- | --- | --- |
+| Baseline, past water | A; 42s | 10 / n/a | 112 | Timeout; none |
+| Baseline, unusual minerals | B; 146s | n/a / 10 | 108 | Timeout; none |
+| Scripted survey, clear | A; 42s | 10 / 0 | 116 | Stranded at 265.2s; B+C |
+| Survey waiting on costly storm routes | A; 42s | 10 / 0 | 114.1 | Timeout; B+C |
+
+The no-recharge, 50-second delay, storm-crossing, and isolated storm-route measurements retain their earlier outcomes. These regressions are recorded rather than tuning the world or hiding failed trips to recover a favorable score. `tests/tuning.test.ts` checks these current outcomes; version 6 and older records retain their original behavior during replay.
 
 ## Isolated storm-route tradeoff
 
@@ -78,4 +91,4 @@ Select two entries in **Saved expeditions**, then **Compare selected expeditions
 
 Matching conditions help interpret differences; they do not establish that a controller or instruction caused a better result. An early manual stop, for example, remains visible in ending condition and elapsed expedition time.
 
-The original measurements used version 1 records. Current exports use version 6 and retain baseline rule evidence. Replay supports versions 1 through 6 and always uses the saved scenario, so earlier `ochre-basin-v4` histories retain their original Sample C position. Session checks replay both layouts at 1×, 2×, and 4× and compare every event, decision, and final result. Existing simulation, perception, storm, inference, and replay checks remain applicable.
+The original measurements used version 1 records. Current exports use version 7 and retain baseline rule evidence and decision cadence. Replay supports versions 1 through 7 and always uses the saved scenario, so earlier `ochre-basin-v4` histories retain their original Sample C position. Session checks replay both layouts at 1×, 2×, and 4× and compare every event, decision, and final result. Existing simulation, perception, storm, inference, and replay checks remain applicable.

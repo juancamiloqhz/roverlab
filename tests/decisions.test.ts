@@ -71,8 +71,8 @@ test('instruction edits interrupt travel at its next waypoint and the replacemen
   expect(expedition.getSnapshot().rover.position).toEqual({ x: 3, z: 13 });
 });
 
-test('new discoveries prompt a decision at the next waypoint while refreshed observations on known terrain do not', () => {
-  const scenario = { id: 'decisions', name: 'Decision corridor', width: 8, depth: 1, base: { x: 0, z: 0 }, sensorRange: 2, obstacles: [], roughTerrain: [], samples: [] };
+test('new samples prompt a decision at the next waypoint while routine terrain and refreshed observations do not', () => {
+  const scenario = { id: 'decisions', name: 'Decision corridor', width: 8, depth: 1, base: { x: 0, z: 0 }, sensorRange: 2, obstacles: [], roughTerrain: [], samples: [{ id: 'new', label: 'New sample', position: { x: 3, z: 0 }, properties: ['Layered sediment'], classifications: { 'past-water': 'strong-evidence' as const, 'unusual-minerals': 'unrelated' as const } }] };
   const expedition = createExpedition({ scenario });
   expedition.dispatch({ type: 'start' });
   expedition.advanceWallTime(3_900);
@@ -80,7 +80,7 @@ test('new discoveries prompt a decision at the next waypoint while refreshed obs
   expedition.advanceWallTime(100);
   const decisions = expedition.getDecisions();
   expect(decisions).toHaveLength(2);
-  expect(decisions[1]!.reason).toBe('new-observations');
+  expect(decisions[1]!.input.decisionBoundary?.triggers).toEqual(['sample-discovered']);
   expect(decisions[1]!.input.position).toEqual({ x: 1, z: 0 });
   expect(decisions[1]!.input.memory.find(item => item.id === 'cell:3,0')?.observedAtMs).toBe(4_000);
 

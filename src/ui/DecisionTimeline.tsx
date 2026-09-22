@@ -11,7 +11,7 @@ const seconds = (ms: number) => `${(ms / 1_000).toFixed(1)} s`;
 const actionName = (action: Action) => 'target' in action
   ? `${action.kind} · ${action.target.label} (${action.target.position.x}, ${action.target.position.z})${action.routeMode === 'avoid-storm' ? ' · Storm detour' : ''}`
   : `${action.kind} · ${seconds(action.durationMs)}`;
-const reasons = { 'mission-changed': 'Mission priorities changed', start: 'Expedition started', 'action-completed': 'Action completed', 'instructions-changed': 'Instructions changed', 'new-observations': 'New observations', 'storm-detected': 'Dust storm detected', 'storm-expired': 'Known dust storm expired', retry: 'Retry requested by mission control', 'controller-changed': 'Controller changed by mission control' };
+const reasons = { 'sample-discovered': 'Sample discovered', 'sample-inspected': 'Sample properties revealed', 'storm-effects-changed': 'Dust storm effects changed', 'battery-reserve': 'Return energy reserve reached', 'return-time': 'Cargo return time reached', 'cargo-full': 'Cargo capacity reached', 'mission-changed': 'Mission priorities changed', start: 'Expedition started', 'action-completed': 'Action completed', 'instructions-changed': 'Instructions changed', 'new-observations': 'New observations', 'storm-detected': 'Dust storm detected', 'storm-expired': 'Known dust storm expired', retry: 'Retry requested by mission control', 'controller-changed': 'Controller changed by mission control' };
 
 export function ObservationTable({ title, observations }: { title: string; observations: Observation[] }) {
   return <div className="decision-table"><table aria-label={title}>
@@ -31,10 +31,12 @@ export function ObservationTable({ title, observations }: { title: string; obser
 function DecisionEntry({ decision }: { decision: Decision }) {
   const [open, setOpen] = useState(false);
   const { input } = decision;
+  const triggers = (input.decisionBoundary?.triggers ?? [decision.reason]).map(reason => reasons[reason]).join(' · ');
   return <li><details onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary>Decision {decision.id} · {seconds(input.atMs)} · {controllerLabels[decision.controller]} <span>{decision.action ? actionName(decision.action) : decision.status}</span></summary>
+    <summary>Decision {decision.id} · {seconds(input.atMs)} · {controllerLabels[decision.controller]} <span>{decision.action ? actionName(decision.action) : decision.status}</span><span>{triggers}</span></summary>
     {open && <div className="decision-details" aria-label={`Decision ${decision.id} details`}>
-      <p><strong>{controllerLabels[decision.controller]}</strong> · {reasons[decision.reason]} · {decision.status}</p>
+      <p><strong>{controllerLabels[decision.controller]}</strong> · {triggers} · {decision.status}</p>
+      {input.decisionBoundary && <p>Decision cadence: {input.decisionBoundary.version}</p>}
       {decision.failure && <p>{failureMessages[decision.failure]}</p>}
       <DecisionUsage decision={decision} />
       <p>Selected action: <strong>{decision.action ? actionName(decision.action) : 'None'}</strong></p>

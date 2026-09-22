@@ -1,3 +1,4 @@
+import { DECISION_CADENCE, type DecisionTrigger } from '../../shared/cadence';
 import { missionInstructions, missionPreset, type MissionPreferences } from '../../shared/mission';
 import { defaultInferenceLimits, inferenceGuard, inferenceLimitsSchema } from '../../shared/limits';
 import { canUpdateEvidence, sameAttempt, summarizeUsage, type AttemptEvidence } from '../../shared/inference';
@@ -40,6 +41,7 @@ class ReplayHistory {
 }
 
 function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
+  const meaningfulBoundaries = !replay || replay.source.version >= 7;
   const scenario = structuredClone(replay?.source.startingConditions.scenario ?? options.scenario ?? authoredScenario);
   // Reuse the world's terrain projection without installing it in rover knowledge.
   const fullTerrain = observe(scenario, scenario.base, 0, Infinity)
@@ -63,6 +65,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   const usageListeners = new Set<() => void>();
   let inFlight: { decision: Decision; expedition: number; abort: AbortController } | null = null;
   const startingConditions: ExpeditionStartingConditions = {
+    ...(meaningfulBoundaries ? { decisionCadence: DECISION_CADENCE } : {}),
     ...(!replay || replay.source.version >= 5 ? { mission: structuredClone(mission) } : {}),
     ...(!replay || replay.source.version >= 4 ? { inferenceLimits: structuredClone(replay?.source.startingConditions.inferenceLimits ?? defaultInferenceLimits) } : {}),
     scenario, objective, instructions, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
@@ -89,6 +92,8 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   let actionController = controller.id;
   let route: Position[] = [];
   let actionProgressMs = 0;
+  const pendingTriggers = new Set<DecisionTrigger>();
+  let resourceThresholds = new Set<DecisionTrigger>();
   let waypointStart = { ...scenario.base };
 
   function initialState(): ExpeditionSnapshot {
@@ -132,6 +137,30 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     return candidates.map(action => ({ ...action, id: `${action.kind}:${'target' in action ? action.target.id + (action.routeMode ? ':avoid-storm' : '') : action.durationMs}` }));
   }
 
+  function requestReconsideration(reason: DecisionTrigger) {
+    if (!meaningfulBoundaries) { state.reconsiderationReason = reason; return; }
+    if (state.status === 'ready' || state.status === 'ended') return;
+    pendingTriggers.add(reason);
+    state.reconsiderationReason = [...pendingTriggers][0]!;
+  }
+
+  function checkResourceThresholds() {
+    if (!meaningfulBoundaries) return;
+    const reached = new Set<DecisionTrigger>();
+    if (state.cargo.length >= state.cargoCapacity) reached.add('cargo-full');
+    const returns = scienceCandidates(state.memory, state.rover.position, state.cargo, state.cargoCapacity, state.elapsedMs)
+      .filter(action => action.kind === 'return-to-base');
+    if (returns.length) {
+      const preferences = state.mission!.effective.preferences;
+      const reserve = preferences.mode === 'preset' ? preferences.preset.settings.returnReserveEnergy
+        : missionPreset('balanced').settings.returnReserveEnergy;
+      if (state.battery <= Math.min(...returns.map(action => action.routeEstimate.energy)) + reserve) reached.add('battery-reserve');
+      if (state.cargo.length && state.remainingMs <= Math.min(...returns.map(action => action.routeEstimate.durationMs)) + 15_000) reached.add('return-time');
+    }
+    for (const trigger of reached) if (!resourceThresholds.has(trigger)) requestReconsideration(trigger);
+    resourceThresholds = reached;
+  }
+
   function currentGuard() {
     return state.inferenceLimits ? inferenceGuard(decisions, state.inferenceLimits, state.acknowledgedAttemptIds!) : null;
   }
@@ -153,7 +182,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     record({ type: 'inference-continued' });
     state.decisionFailure = null;
     state.status = 'running';
-    if (!state.currentAction) state.reconsiderationReason ??= 'retry';
+    if (!state.currentAction && !state.reconsiderationReason) requestReconsideration('retry');
     record({ type: 'resumed' });
     selectAction();
   }
@@ -175,7 +204,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     state.instructions = instructions;
     state.instructionsVersion++;
     invalidateDecision();
-    state.reconsiderationReason = mission.mode === 'free-text' ? 'instructions-changed' : 'mission-changed';
+    requestReconsideration(mission.mode === 'free-text' ? 'instructions-changed' : 'mission-changed');
     if (state.mission) {
       state.mission.requested = { version: state.instructionsVersion, preferences: structuredClone(mission) };
       state.mission.history.push({ ...structuredClone(state.mission.requested), requestedAtMs: state.elapsedMs, appliedAtMs: null });
@@ -192,7 +221,9 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     if (checkUsageGuard()) return;
     if (replay && replay.next?.type !== 'decision-requested' && replay.next?.type !== 'mission-applied') return;
     applyMission();
+    checkResourceThresholds();
     const input: ControllerInput = structuredClone({
+      ...(meaningfulBoundaries ? { decisionBoundary: { version: DECISION_CADENCE, triggers: [...pendingTriggers] } } : {}),
       ...(state.mission ? { mission: state.mission.effective } : {}),
       instructions: state.instructions, instructionsVersion: state.instructionsVersion,
       battery: state.battery, batteryCapacity: state.batteryCapacity,
@@ -204,6 +235,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     const decision: Decision = { reason: state.reconsiderationReason ?? 'action-completed', id: decisions.length + 1, input, controller: controller.id, status: 'pending', inferenceAttempts: 0 };
     if (controller.id === 'typesafe' && (!replay || replay.source.version >= 2)) decision.accounting = { expeditionId, attempts: [] };
     state.reconsiderationReason = null;
+    pendingTriggers.clear();
     decisions.push(decision);
     if (state.usage) state.usage = summarizeUsage(decisions);
     state.decisionRevision++;
@@ -336,6 +368,11 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   function invalidateDecision() {
     if (inFlight && inFlight.decision.status === 'pending') {
       state.decisionRevision++;
+      if (meaningfulBoundaries && inFlight.expedition === expedition) {
+        const triggers = [...inFlight.decision.input.decisionBoundary!.triggers, ...pendingTriggers];
+        pendingTriggers.clear();
+        for (const trigger of triggers) requestReconsideration(trigger);
+      }
       inFlight.decision.status = 'discarded';
       record({ type: 'decision-discarded', decisionId: inFlight.decision.id });
       inFlight.abort.abort();
@@ -345,7 +382,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   function resumeAfterDecisionFailure(reason: 'retry' | 'controller-changed') {
     state.decisionFailure = null;
     state.status = 'running';
-    state.reconsiderationReason = reason;
+    requestReconsideration(reason);
     record({ type: 'resumed' });
     reconsiderAtWaypoint();
     selectAction();
@@ -367,7 +404,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     if (storm && state.elapsedMs >= storm.expiresAtMs) {
       const detected = memory.has(storm.id);
       record({ type: 'storm-expired', stormId: storm.id, detected });
-      if (detected) state.reconsiderationReason = 'storm-expired';
+      if (detected) requestReconsideration('storm-expired');
       storm = null;
     }
     // A disclosed expiry is predictable even out of range; do not refresh last-seen time.
@@ -380,6 +417,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     const multiplier = storm && insideStorm ? storm.movementEnergyMultiplier : 1;
     if (sensorRange !== state.sensorRange || multiplier !== movementEnergyMultiplier) {
       record({ type: 'storm-effects-changed', sensorRange, movementEnergyMultiplier: multiplier });
+      if (meaningfulBoundaries) requestReconsideration('storm-effects-changed');
     }
     state.sensorRange = sensorRange;
     movementEnergyMultiplier = multiplier;
@@ -395,7 +433,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       if (!memory.has(storm.id)) {
         record({ type: 'storm-detected', storm: observation });
         invalidateDecision();
-        state.reconsiderationReason = 'storm-detected';
+        requestReconsideration('storm-detected');
       }
     }
     const discoveries = state.observations.filter(observation => !memory.has(observation.id));
@@ -405,7 +443,9 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     state.inspectionCount = state.memory.filter(item => item.kind === 'sample' && item.properties).length;
     if (discoveries.length) {
       record({ type: 'discovered', observations: discoveries });
-      if (state.currentAction && !state.reconsiderationReason) state.reconsiderationReason = 'new-observations';
+      if (meaningfulBoundaries) {
+        if (discoveries.some(item => item.kind === 'sample')) requestReconsideration('sample-discovered');
+      } else if (state.currentAction && !state.reconsiderationReason) state.reconsiderationReason = 'new-observations';
     }
   }
 
@@ -439,6 +479,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         memory.inspectedAtMs = state.elapsedMs;
         memory.observedAtMs = state.elapsedMs;
         record({ type: 'sample-inspected', sample: memory });
+        if (meaningfulBoundaries) requestReconsideration('sample-inspected');
       } else {
         if (state.cargo.length >= state.cargoCapacity) return false;
         memory.status = 'cargo';
@@ -453,6 +494,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   function finish(condition: EndingCondition) {
     invalidateDecision();
     state.reconsiderationReason = null;
+    pendingTriggers.clear();
     if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: actionController });
     state.currentAction = null;
     state.status = 'ended';
@@ -463,7 +505,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 6, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 7, id: expeditionId, completedAt: new Date().toISOString(),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();
@@ -542,8 +584,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       }
     }
     sense();
+    if (completed || actionProgressMs === 0) checkResourceThresholds();
     if (completed) {
       if (state.currentAction) record({ type: 'action-completed', action, controller: actionController });
+      if (meaningfulBoundaries) requestReconsideration('action-completed');
       previousAction = action;
       state.currentAction = null;
     }
@@ -639,7 +683,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       } else if (command.type === 'start' && state.status === 'ready') {
         state.status = 'running';
         record({ type: 'started' });
-        state.reconsiderationReason = 'start';
+        requestReconsideration('start');
         selectAction();
       } else if (command.type === 'pause' && state.status === 'running') {
         state.status = 'paused';
@@ -673,6 +717,8 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         expeditionId = crypto.randomUUID();
         runStartingConditions = { ...startingConditions, ...(state.mission ? { mission: structuredClone(mission) } : {}), objective, instructions, controller: controller.id };
         decisions = [];
+        pendingTriggers.clear();
+        resourceThresholds.clear();
         storm = null;
         movementEnergyMultiplier = 1;
         state = initialState();

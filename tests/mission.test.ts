@@ -84,7 +84,7 @@ test.each(['balanced', 'conserve-energy', 'explore-more', 'free-text'] as const)
   expect(received!.questions.action.instructions).toContain('mission.preferences');
   expect(JSON.stringify(received)).not.toContain('classifications');
   expect(JSON.stringify(received)).not.toContain('Sample B');
-  expect(jev.getDecisions()[0]!.accounting!.attempts[0]!.evidence!.promptVersion).toBe('rover-action-v2');
+  expect(jev.getDecisions()[0]!.accounting!.attempts[0]!.evidence!.promptVersion).toBe('rover-action-v3');
   jev.dispatch({ type: 'stop' });
   roundTrip(jev);
 });

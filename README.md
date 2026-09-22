@@ -48,6 +48,7 @@ bun test tests/energy.test.ts     # terrain costs, multiple trips, recharge, dep
 bun test tests/storm.test.ts    # disclosure, sensing, crossing/detours, expiry, safe reconsideration, and frozen time
 bun test tests/mission.test.ts   # exclusive presets, shared SDK input, safe boundaries, history, and legacy replay
 bun test tests/decisions.test.ts # instruction edits, safe reconsideration, pending decisions, and stale results
+bun test tests/cadence.test.ts # provider request counts, coalesced triggers, resource boundaries, and legacy cadence
 bun test tests/records.test.ts # completed histories, JSON validation, reset isolation, and inference settlement
 bun test tests/replay.test.ts # recorded execution, playback independence, controller histories, and incompatible records
 bun test tests/tuning.test.ts # baseline/scripted tradeoffs, storm responses, and replay across scenario versions
@@ -94,7 +95,7 @@ Snapshots and records are detached copies. `getRecord()` captures full starting 
 
 Mission instructions are limited to 20,000 characters, matching the shared decision and record contract; oversized drafts show feedback before they can be applied. Apply instruction edits to record them and update controller context without changing the scientific objective or rubric. The baseline receives the text and reconsiders with its existing fixed rules; it does not interpret free-form preferences. The timeline states this explicitly and shows no invented model probabilities or reasoning. Each expandable entry contains its trigger, controller, instruction version and text, selected candidate identity, all complete action-and-target candidates and route estimates, resource state, sensor range, previous completed action, observations, and timestamped memory. Historical entries never acquire knowledge from later sensing or inspections.
 
-Action completion, newly discovered terrain or objects, detected or expired known storms, and changed instructions prompt decisions. Travel stops for reconsideration at the next grid waypoint; inspection, collection, and bounded waiting already underway finish first. Recharge can be interrupted while stationary. Refreshing last-seen timestamps during routine movement does not request another decision. This means the authored rover now pursues Sample A at its first discovery instead of finishing its initial exploration target first.
+Action completion, newly discovered samples or inspected properties, detected or changed known storms, changed mission preferences, and resource threshold crossings prompt decisions. Routine terrain discovery updates memory without independently requesting a decision. All contributing trigger kinds appear in the recorded controller input and timeline. See [decision cadence](docs/decision-cadence.md) for thresholds and coalescing rules. Travel stops for reconsideration at the next grid waypoint; inspection, collection, and bounded waiting already underway finish first. Recharge can be interrupted while stationary. Refreshing last-seen timestamps during routine movement does not request another decision. This means the authored rover now pursues Sample A at its first discovery instead of finishing its initial exploration target first.
 
 The coordinator admits at most one controller decision at a time. Pending decisions freeze expedition time, movement, energy, and perception. Camera, pause, stop, reset, speed, and instruction controls remain responsive. Edits and lifecycle changes discard obsolete results and cancel TypeSafe requests; replacements wait for the cancelled operation to settle. Returned identities must match an originally offered candidate that still satisfies current preconditions, and execution uses the simulator's copy. Invalid selections pause without automatic controller substitution. The baseline resolves synchronously. TypeSafe failures pause and offer Retry or Continue with the baseline controller; stop/reset remain available. Request latency is recorded separately from simulated time.
 
@@ -102,7 +103,7 @@ Retry starts a new five-second decision operation using current instructions and
 
 ### Localized dust storm
 
-Use **Introduce dust storm** once per expedition, before starting or while running or paused. Reset restores the control. The authored storm lasts 45 expedition seconds, centered at (15, 13) with a 4.5-cell radius. Inside it, sensor range drops from three to 1.5 cells and movement energy triples; travel speed stays unchanged. To see the baseline encounter it, introduce it around 01:30 elapsed (03:30 remaining), as the rover approaches the eastern area. No key is needed.
+Use **Introduce dust storm** once per expedition, before starting or while running or paused. Reset restores the control. The authored storm lasts 45 expedition seconds, centered at (15, 13) with a 4.5-cell radius. Inside it, sensor range drops from three to 1.5 cells and movement energy triples; travel speed stays unchanged. To see the baseline encounter it, select Find unusual minerals and introduce it around 01:30 elapsed (03:30 remaining), as the rover approaches the eastern area. No key is needed.
 
 Until the sensor footprint intersects the storm, its region, duration, effects, and route costs remain absent from rover knowledge and the scene. Introduction is acknowledged to mission control without revealing those details. Detection discloses the circle, exact expiration time, remaining time, and effects, then prompts reconsideration at the next safe waypoint. Existing inspections, collection, and bounded waits finish first. A newly detected storm invalidates an outstanding decision without overlapping requests. Hidden introduction does not invalidate an otherwise valid choice.
 
@@ -205,6 +206,12 @@ The failure scenarios cover provider failures with usage, retries, malformed cho
 Edits record both their request time and their application at a safe action boundary. The interface distinguishes requested and effective preferences, superseded changes, and changes left unapplied when an expedition ends. The objective, rubric, and physical simulation remain fixed. Both controllers receive the same effective preferences and knowledge. The baseline interprets preset settings through versioned scientific and resource rules. Free-text experiments disclose that the baseline uses Balanced defaults and cannot interpret arbitrary instructions; they are not labeled matched-priority benchmarks.
 
 Version 5 exports retain definitions, versions, and mission histories. Saved inspection, comparison, and replay display those preferences without new inference. Versions 1 through 4 keep their original free-text meaning and replay unchanged. A version 4 fixture captured from ticket 03 commit `c214d58` supplements the earlier legacy fixtures.
+
+### Meaningful decision boundaries
+
+[Jev decision lab ticket 06](.scratch/jev-decision-lab/issues/06-request-decisions-at-meaningful-boundaries.md) adds `meaningful-boundaries-v1`. Changes reaching one safe boundary share a decision and preserve all contributing triggers. Return-energy reserve, cargo delivery time, and full cargo capacity can request reconsideration without forcing the controller's action. Mission control can distinguish Jev choosing, code executing, and pauses in the existing action panel.
+
+Version 7 exports preserve cadence and the exact trigger context supplied to the controller. Prompt provenance is `rover-action-v3`. Versions 1 through 6 retain their original trigger meanings and simulation behavior during inference-free replay. See [decision cadence](docs/decision-cadence.md) for the rules and deterministic provider-count evidence.
 
 ### Baseline scientific and resource rules
 

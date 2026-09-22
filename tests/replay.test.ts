@@ -99,6 +99,7 @@ test.each([false, true])('TypeSafe choices and recovery replay without inference
   live.dispatch({ type: 'start' });
   await advanceTo(live, 90_000);
   live.dispatch({ type: 'introduce-storm' });
+  await advanceTo(live, 90_000);
   fail = mixed;
   live.dispatch({ type: 'set-instructions', instructions: 'Conserve energy around the storm.' });
   if (mixed) {

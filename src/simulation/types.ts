@@ -1,3 +1,4 @@
+import type { DecisionBoundary, DecisionTrigger } from '../../shared/cadence';
 import type { MissionPreferences, MissionRevision, MissionState, MissionPresetId } from '../../shared/mission';
 import type { BaselineEvidence } from '../../shared/baseline';
 import type { InferenceLimits, UsagePause } from '../../shared/limits';
@@ -63,7 +64,7 @@ export type ExpeditionController = {
   decide(input: ControllerInput, context: { signal: AbortSignal; reserveAttempt(retryIndex?: 0 | 1): AttemptIdentity | null; reportAttempt(evidence: AttemptEvidence): void }): string | DecisionOutcome | Promise<string | DecisionOutcome>;
 };
 export type ControllerHistoryEntry = { controller: ExpeditionController['id']; atMs: number; firstDecisionId: number };
-export type DecisionReason = 'start' | 'action-completed' | 'instructions-changed' | 'new-observations' | 'storm-detected' | 'storm-expired' | 'retry' | 'controller-changed' | 'mission-changed';
+export type DecisionReason = DecisionTrigger | 'new-observations';
 export type Decision = {
   baseline?: BaselineEvidence;
   accounting?: DecisionAccounting;
@@ -79,6 +80,7 @@ export type Decision = {
   failure?: DecisionFailure;
 };
 export type ControllerInput = {
+  decisionBoundary?: DecisionBoundary;
   mission?: MissionRevision;
   remainingMs: number;
   energyUsed: number;
@@ -186,6 +188,7 @@ export type EventDetail =
 export type ExpeditionEvent = EventDetail & { sequence: number; expedition: number; atMs: number };
 
 export type ExpeditionStartingConditions = {
+  decisionCadence?: 'meaningful-boundaries-v1';
   mission?: MissionPreferences;
   inferenceLimits?: InferenceLimits;
   scenario: Scenario; objective: ScientificObjective; instructions: string; rubric: ScienceRubric;
@@ -194,7 +197,7 @@ export type ExpeditionStartingConditions = {
   waitMs: number; inspectMs: number; collectMs: number; cargoCapacity: number; controller: ExpeditionController['id'];
 };
 export type ExpeditionRecord = {
-  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6; id: string; completedAt: string;
+  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7; id: string; completedAt: string;
   startingConditions: ExpeditionStartingConditions;
   events: ExpeditionEvent[]; decisions: Decision[]; results: ExpeditionSnapshot;
 };

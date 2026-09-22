@@ -97,7 +97,7 @@ test('mission control selects objectives, sees inspection and cargo, and scores 
     if (value === 'unusual-minerals') {
       await expect(page.getByLabel('Current action')).toContainText('Explore');
       await expect(page.getByLabel('Cargo capacity')).toHaveText('0 / 2');
-      await page.clock.fastForward(54_000);
+      await page.clock.fastForward(64_000);
       await expect(page.getByLabel('Samples inspected')).toHaveText('2');
     }
     await expect(page.getByLabel('Current action')).toContainText(`Collect · Sample ${sample}`);

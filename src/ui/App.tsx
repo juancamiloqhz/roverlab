@@ -55,6 +55,9 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
   const samples = snapshot.memory.filter(item => item.kind === 'sample');
   const currentIds = new Set(snapshot.observations.map(item => item.id));
   const active = status === 'running' || status === 'paused';
+  const decisionPhase = status === 'ended' ? 'Ended' : snapshot.usagePause ? 'Usage paused' : snapshot.decisionFailure ? 'Failed'
+    : status === 'paused' ? 'Paused' : snapshot.decisionPending ? (snapshot.controller === 'typesafe' ? 'Jev choosing' : 'Controller choosing')
+      : currentAction ? 'Code executing' : 'Ready';
   const statusLabel = snapshot.usagePause && active ? 'Inference usage paused · Expedition time frozen' : snapshot.decisionPending && active ? 'Decision pending · Expedition time frozen' : { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
   const { label: actionLabel, description: actionDescription } = snapshot.decisionPending && active
     ? { label: 'Awaiting decision', description: 'Expedition time and resources are frozen. Camera and mission controls remain available.' }
@@ -99,7 +102,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
                 </div>
               </>}
             </section>}
-            <p className="world-note"><span aria-hidden="true">↳</span> You set the pace. The rover chooses its own targets and routes.</p>
+            <p className="world-note"><span aria-hidden="true">↳</span> The controller chooses an action and target. Code constructs the route, moves the rover, and scores delivered samples.</p>
             <StormControl snapshot={snapshot} dispatch={dispatch} />
             <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} />
           </div>
@@ -131,7 +134,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
               <div className="telemetry-row"><span>Energy used</span><strong aria-label="Energy used">{snapshot.energyUsed.toFixed(1)} units</strong></div>
               <p className="memory-note">Movement uses energy; rough terrain costs more. Recharge at base uses expedition time.</p>
             </section>
-            <div className="action-block"><span className="field-label">CURRENT ACTION</span><strong aria-label="Current action">{actionLabel}</strong><p>{actionDescription}{currentAction && 'target' in currentAction && currentAction.routeMode === 'avoid-storm' && ' Taking a known route around the dust storm.'}</p></div>
+            <div className="action-block"><p aria-label="Decision phase">{decisionPhase}</p><span className="field-label">CURRENT ACTION</span><strong aria-label="Current action">{actionLabel}</strong><p>{actionDescription}{currentAction && 'target' in currentAction && currentAction.routeMode === 'avoid-storm' && ' Taking a known route around the dust storm.'}</p></div>
             <div className="telemetry-row"><span>Rover coordinates</span><strong aria-label="Rover coordinates">{rover.position.x.toFixed(2)} / {rover.position.z.toFixed(2)}</strong></div>
             <div className="telemetry-row"><span>Distance traveled</span><strong>{rover.distance.toFixed(1)} <span>cells</span></strong></div>
             <section className="science-block" aria-label="Science progress">

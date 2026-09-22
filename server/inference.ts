@@ -1,7 +1,7 @@
 import { metadataIdSchema, type AttemptEvidence, type InferencePricing } from '../shared/inference';
 
 export const REQUESTED_MODEL = 'jev-latest';
-export const PROMPT_VERSION = 'rover-action-v2';
+export const PROMPT_VERSION = 'rover-action-v3';
 
 // Official model reference verified on 2026-09-22. A new resolved model needs a
 // separately verified entry; the floating alias is never a pricing key.

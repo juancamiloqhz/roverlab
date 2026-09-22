@@ -4,30 +4,31 @@ import { createReplay } from '../src/simulation/expedition';
 import { authoredScenario } from '../src/simulation/scenario';
 import { exportExpeditionRecord, importExpeditionRecord } from '../src/records/contract';
 
-test('a deliberate two-trip survey can wait for a detected storm and deliver all three samples within five minutes', () => {
+test('a deliberate survey can wait for a storm and inspect all samples but miss delivery with the boundary cadence', () => {
   const record = runPlaytest({ strategy: 'wait-for-storm', stormAtMs: 90_000 });
   expect(record.results).toMatchObject({
-    elapsedMs: 300_000, endingCondition: 'timeout', scienceScore: 15,
-    discoveryCount: 3, inspectionCount: 3, cargo: [],
+    elapsedMs: 300_000, endingCondition: 'timeout', scienceScore: 10,
+    discoveryCount: 3, inspectionCount: 3, cargo: [{ sampleId: 'b' }, { sampleId: 'c' }],
   });
-  expect(record.results.deliveredSamples.map(sample => sample.sampleId)).toEqual(['a', 'b', 'c']);
-  expect(record.results.deliveredSamples.at(-1)!.deliveredAtMs).toBe(298_200);
+  expect(record.results.deliveredSamples.map(sample => sample.sampleId)).toEqual(['a']);
+  expect(record.results.deliveredSamples.at(-1)!.deliveredAtMs).toBe(42_000);
   expect(record.events.some(event => event.type === 'storm-detected')).toBe(true);
   expect(record.decisions.some(decision => decision.action?.kind === 'wait' && decision.input.memory.some(item => item.kind === 'dust-storm' && item.remainingMs > 0))).toBe(true);
 });
 
-test.each(['past-water', 'unusual-minerals'] as const)('baseline and deliberate surveys expose different science returns for %s', objective => {
+test.each(['past-water', 'unusual-minerals'] as const)('baseline and deliberate surveys expose delivery risk for %s', objective => {
   const baseline = runPlaytest({ strategy: 'baseline', objective });
   const survey = runPlaytest({ objective });
   expect(baseline.results.deliveredSamples.map(sample => sample.sampleId)).toEqual([objective === 'past-water' ? 'a' : 'b']);
   expect(baseline.results.scienceScore).toBe(10);
   expect(baseline.results.discoveryCount).toBe(objective === 'past-water' ? 1 : 2);
   expect(baseline.results.inspectionCount).toBe(objective === 'past-water' ? 1 : 2);
-  expect(survey.results.scienceScore).toBe(15);
+  expect(survey.results.scienceScore).toBe(objective === 'past-water' ? 10 : 0);
+  expect(survey.results).toMatchObject({ endingCondition: 'stranded', elapsedMs: 265_200, cargo: [{ sampleId: 'b' }, { sampleId: 'c' }] });
   expect(survey.results.deliveredSamples.map(sample => [sample.sampleId, sample.deliveredAtMs])).toEqual([
-    ['a', 42_000], ['b', 253_200], ['c', 253_200],
+    ['a', 42_000],
   ]);
-  expect(survey.results.energyUsed).toBe(110);
+  expect(survey.results.energyUsed).toBe(116);
   expect(survey.startingConditions).toMatchObject({
     durationMs: 300_000, cargoCapacity: 2, inspectMs: 6_000, collectMs: 4_000,
     rechargePerSecond: 5, rubric: { unrelated: 0, suggestive: 5, 'strong-evidence': 10 },

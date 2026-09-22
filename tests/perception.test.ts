@@ -35,6 +35,7 @@ test('a controller receives only sensed terrain, objects, and routes through the
   });
   if (decision?.type !== 'decision-made') throw new Error('Missing controller input');
   expect(decision.input).toEqual({
+    decisionBoundary: { version: 'meaningful-boundaries-v1', triggers: ['start'] },
     mission: { version: 0, preferences: { mode: 'free-text', instructions: '' } },
     instructions: '', instructionsVersion: 0, remainingMs: 300_000, energyUsed: 0,
     battery: 100, batteryCapacity: 100,

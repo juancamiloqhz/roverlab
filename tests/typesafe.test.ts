@@ -343,8 +343,8 @@ test('mission control retries a failed decision with current instructions and th
   release();
   await settled(expedition);
   expect(expedition.getSnapshot()).toMatchObject({ status: 'running', controller: 'typesafe', inferenceAttempts: 3, currentAction: { kind: 'wait' }, elapsedMs: 0, battery: 100 });
-  expect(expedition.getDecisions().map(decision => [decision.reason, decision.status, decision.inferenceAttempts])).toEqual([
-    ['start', 'failed', 2], ['retry', 'applied', 1],
+  expect(expedition.getDecisions().map(decision => [decision.input.decisionBoundary?.triggers, decision.status, decision.inferenceAttempts])).toEqual([
+    [['start'], 'failed', 2], [['instructions-changed', 'retry'], 'applied', 1],
   ]);
   expedition.advanceWallTime(1_000);
   expect(expedition.getSnapshot().elapsedMs).toBe(1_000);

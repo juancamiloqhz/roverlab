@@ -1,3 +1,4 @@
+import { decisionBoundarySchema } from './cadence';
 import { MAX_MISSION_INSTRUCTIONS_LENGTH, missionInstructions, missionRevisionSchema } from './mission';
 import { z } from 'zod';
 import { attemptEvidenceSchema, attemptIdentitySchema } from './inference';
@@ -40,6 +41,7 @@ const candidate = z.discriminatedUnion('kind', [
 ]);
 export const recordedActionSchema = z.union([action, candidate]);
 export const controllerInputSchema: z.ZodType<ControllerInput> = z.strictObject({
+  decisionBoundary: decisionBoundarySchema.optional(),
   mission: missionRevisionSchema.optional(),
   remainingMs: number, energyUsed: number, instructions: z.string().max(MAX_MISSION_INSTRUCTIONS_LENGTH), instructionsVersion: number.int(),
   battery: number, batteryCapacity: number.positive(), objective: z.enum(['past-water', 'unusual-minerals']),

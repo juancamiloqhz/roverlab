@@ -8,7 +8,9 @@ export const greedySurvey: ExpeditionController = { id: 'scripted', decide(input
   const returnToBase = candidates.find(action => action.kind === 'return-to-base');
   const recharge = candidates.find(action => action.kind === 'recharge');
   if (recharge && battery <= batteryCapacity * 0.9) return recharge.id;
-  if (returnToBase && (battery <= returnToBase.routeEstimate.energy + 10 || cargo.length >= cargoCapacity)) return returnToBase.id;
+  // Keep pursuing science despite mid-route warnings to exercise physical failure.
+  const resourceWarning = input.decisionBoundary?.triggers.some(trigger => trigger === 'battery-reserve' || trigger === 'return-time');
+  if (returnToBase && (battery <= returnToBase.routeEstimate.energy + 10 && !resourceWarning || cargo.length >= cargoCapacity)) return returnToBase.id;
   if (previousAction?.kind === 'explore') return wait.id;
   const science = candidates.filter(action => action.kind === 'inspect' || action.kind === 'collect')
     .sort((a, b) => a.routeEstimate.durationMs - b.routeEstimate.durationMs

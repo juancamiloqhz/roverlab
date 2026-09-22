@@ -16,6 +16,7 @@ test('mission control introduces a hidden storm, observes detection, and freezes
   await expect(introduce).toBeDisabled();
   await page.getByRole('button', { name: 'Reset expedition' }).click();
   await expect(introduce).toBeEnabled();
+  await page.getByRole('combobox', { name: 'Scientific objective' }).selectOption('unusual-minerals');
   await page.getByRole('button', { name: 'Start expedition' }).click();
   await page.clock.fastForward(90_000);
   await page.getByRole('button', { name: 'Pause expedition' }).click();
