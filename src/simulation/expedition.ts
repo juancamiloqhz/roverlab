@@ -1,3 +1,4 @@
+import { defaultInferenceLimits, inferenceGuard, inferenceLimitsSchema } from '../../shared/limits';
 import { canUpdateEvidence, sameAttempt, summarizeUsage, type AttemptEvidence } from '../../shared/inference';
 import { chooseBaselineAction } from '../controllers/baseline';
 import { INFERENCE_LIMIT, MAX_MISSION_INSTRUCTIONS_LENGTH, type DecisionOutcome } from '../../shared/decisions';
@@ -57,6 +58,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   const usageListeners = new Set<() => void>();
   let inFlight: { decision: Decision; expedition: number; abort: AbortController } | null = null;
   const startingConditions: ExpeditionStartingConditions = {
+    ...(!replay || replay.source.version >= 4 ? { inferenceLimits: structuredClone(replay?.source.startingConditions.inferenceLimits ?? defaultInferenceLimits) } : {}),
     scenario, objective, instructions, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
     travelTimeMs: { plain: travelTimeMs('plain'), rough: travelTimeMs('rough') },
     rechargePerSecond: RECHARGE_PER_SECOND, batteryCapacity: 100, initialBattery: 100, movementEnergy: { plain: movementEnergy('plain'), rough: movementEnergy('rough') },
@@ -78,12 +80,14 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   let state: ExpeditionSnapshot = initialState();
   let pendingMs = 0;
   let previousAction: Action | null = null;
+  let actionController = controller.id;
   let route: Position[] = [];
   let actionProgressMs = 0;
   let waypointStart = { ...scenario.base };
 
   function initialState(): ExpeditionSnapshot {
     return {
+      ...(startingConditions.inferenceLimits ? { inferenceLimits: structuredClone(startingConditions.inferenceLimits), acknowledgedAttemptIds: [], usagePause: null } : {}),
       ...(!replay || replay.source.version >= 2 ? { usage: summarizeUsage([]) } : {}),
       stormIntroduced: false, stormAvailable: !!scenario.dustStorm,
       controller: controller.id, inferenceAttempts: 0, inferenceLatencyMs: 0, decisionFailure: null,
@@ -119,8 +123,35 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     return candidates.map(action => ({ ...action, id: `${action.kind}:${'target' in action ? action.target.id + (action.routeMode ? ':avoid-storm' : '') : action.durationMs}` }));
   }
 
+  function currentGuard() {
+    return state.inferenceLimits ? inferenceGuard(decisions, state.inferenceLimits, state.acknowledgedAttemptIds!) : null;
+  }
+
+  function checkUsageGuard() {
+    if (!state.inferenceLimits || controller.id !== 'typesafe' || state.status === 'ready' || state.status === 'ended') return false;
+    const pause = currentGuard()!;
+    if ((pause.reasons.length || state.usagePause) && !sameRecordData(state.usagePause, pause)) {
+      state.usagePause = pause;
+      state.status = 'paused';
+      record({ type: 'usage-paused', pause });
+    }
+    return pause.reasons.length > 0;
+  }
+
+  function continueInference() {
+    if (inFlight || !state.usagePause || checkUsageGuard()) return;
+    state.usagePause = null;
+    record({ type: 'inference-continued' });
+    state.decisionFailure = null;
+    state.status = 'running';
+    if (!state.currentAction) state.reconsiderationReason ??= 'retry';
+    record({ type: 'resumed' });
+    selectAction();
+  }
+
   function selectAction() {
     if (inFlight || state.status !== 'running' || state.currentAction || state.decisionFailure) return;
+    if (checkUsageGuard()) return;
     if (replay && replay.next?.type !== 'decision-requested') return;
     const input: ControllerInput = structuredClone({
       instructions: state.instructions, instructionsVersion: state.instructionsVersion,
@@ -148,7 +179,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       const result = controller.decide(structuredClone(input), {
         signal: request.abort.signal,
         reserveAttempt(retryIndex = 0) {
-          if (request !== inFlight || request.abort.signal.aborted || state.inferenceAttempts >= INFERENCE_LIMIT) return null;
+          if (request !== inFlight || request.abort.signal.aborted || (state.inferenceLimits ? currentGuard()!.reasons.length > 0 : state.inferenceAttempts >= INFERENCE_LIMIT)) return null;
           state.inferenceAttempts++;
           decision.inferenceAttempts++;
           state.decisionRevision++;
@@ -191,6 +222,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     origin.state.usage = summarizeUsage(origin.decisions);
     origin.state.decisionRevision++;
     record({ type: 'inference-accounted', evidence }, origin.state.elapsedMs, origin.expedition);
+    if (origin.expedition === expedition && !inFlight) checkUsageGuard();
     const completedIndex = completedRecords.findIndex(item => item.id === evidence.identity.expeditionId);
     if (completedIndex !== -1) {
       completedRecords[completedIndex] = structuredClone({ ...completedRecords[completedIndex]!,
@@ -216,6 +248,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       || state.status === 'ended' || state.status === 'ready' || decision.status === 'discarded') {
       record({ type: 'decision-settled', decision }, decision.input.atMs, request.expedition);
       completeRecord();
+      checkUsageGuard();
       selectAction();
       return;
     }
@@ -232,9 +265,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       decision.status = decision.failure === 'invalid-output' ? 'invalid' : 'failed';
       decision.latencyMs = latencyMs;
       state.status = 'paused';
-      state.decisionFailure = decision.failure;
+      state.decisionFailure = decision.failure === 'usage-paused' ? null : decision.failure;
       record({ type: 'decision-invalid', decisionId: decision.id });
       record({ type: 'decision-settled', decision });
+      checkUsageGuard();
       return;
     }
     state.decisionRevision++;
@@ -246,6 +280,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       decisionId: decision.id, selectedCandidateId: action.id, latencyMs, inferenceAttempts: decision.inferenceAttempts,
       probabilities: decision.probabilities, confidence: decision.confidence });
     state.currentAction = action;
+    actionController = controller.id;
     actionProgressMs = 0;
     route = [];
     if ('target' in action) {
@@ -253,6 +288,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       waypointStart = { ...state.rover.position };
     }
     record({ type: 'action-started', action, controller: controller.id });
+    checkUsageGuard();
   }
 
   function invalidateDecision() {
@@ -269,6 +305,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     state.status = 'running';
     state.reconsiderationReason = reason;
     record({ type: 'resumed' });
+    reconsiderAtWaypoint();
     selectAction();
   }
 
@@ -277,7 +314,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Inspection, collection, and bounded waiting finish first. Travel and recharge
     // can be interrupted while stationary, but never part-way through a grid edge.
     if (state.currentAction.kind !== 'recharge' && !('target' in state.currentAction && actionProgressMs === 0)) return;
-    record({ type: 'action-cancelled', action: state.currentAction, controller: controller.id });
+    record({ type: 'action-cancelled', action: state.currentAction, controller: actionController });
     state.currentAction = null;
     route = [];
     selectAction();
@@ -374,7 +411,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   function finish(condition: EndingCondition) {
     invalidateDecision();
     state.reconsiderationReason = null;
-    if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: controller.id });
+    if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: actionController });
     state.currentAction = null;
     state.status = 'ended';
     state.endingCondition = condition;
@@ -384,7 +421,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 3, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 4, id: expeditionId, completedAt: new Date().toISOString(),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();
@@ -458,13 +495,13 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       const interactionMs = action.kind === 'inspect' ? INSPECT_MS : action.kind === 'collect' ? COLLECT_MS : 0;
       completed = route.length === 0 && actionProgressMs >= interactionMs;
       if (completed && !completeInteraction(action)) {
-        record({ type: 'action-cancelled', action, controller: controller.id });
+        record({ type: 'action-cancelled', action, controller: actionController });
         state.currentAction = null;
       }
     }
     sense();
     if (completed) {
-      if (state.currentAction) record({ type: 'action-completed', action, controller: controller.id });
+      if (state.currentAction) record({ type: 'action-completed', action, controller: actionController });
       previousAction = action;
       state.currentAction = null;
     }
@@ -506,6 +543,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     },
     getRecord: () => structuredClone({ startingConditions, events, results: {
       ...(state.usage ? { usage: state.usage } : {}),
+      ...(state.inferenceLimits ? { inferenceLimits: state.inferenceLimits, acknowledgedAttemptIds: state.acknowledgedAttemptIds, usagePause: state.usagePause } : {}),
       controller: state.controller, controllerHistory: state.controllerHistory, inferenceAttempts: state.inferenceAttempts, inferenceLatencyMs: state.inferenceLatencyMs,
       endingCondition: state.endingCondition, scienceScore: state.scienceScore, energyUsed: state.energyUsed,
       discoveryCount: state.discoveryCount, inspectionCount: state.inspectionCount,
@@ -514,7 +552,25 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       if (command.type === 'set-instructions' && command.instructions.length > MAX_MISSION_INSTRUCTIONS_LENGTH) {
         throw new RangeError('Mission instructions must be 20,000 characters or fewer.');
       }
-      if (command.type === 'introduce-storm' && scenario.dustStorm && !state.stormIntroduced && state.status !== 'ended') {
+      if (command.type === 'set-inference-limits' && state.inferenceLimits && !inFlight
+        && (state.status === 'ready' || (state.status === 'paused' && state.usagePause))) {
+        const limits = inferenceLimitsSchema.parse(command.limits);
+        if (state.status !== 'ready' && (limits.providerAttempts < state.inferenceLimits.providerAttempts
+          || limits.estimatedCost < state.inferenceLimits.estimatedCost)) return;
+        if (sameRecordData(limits, state.inferenceLimits)) return;
+        state.inferenceLimits = limits;
+        record({ type: 'inference-limits-changed', limits });
+        checkUsageGuard();
+      } else if (command.type === 'acknowledge-usage' && state.usagePause && !inFlight && state.status === 'paused') {
+        const affected = currentGuard()!.attemptIds;
+        if (!affected.length || !sameRecordData([...command.attemptIds].sort(), [...affected].sort())) return;
+        state.acknowledgedAttemptIds!.push(...affected);
+        record({ type: 'usage-acknowledged', attemptIds: affected });
+        checkUsageGuard();
+        continueInference();
+      } else if (command.type === 'continue-inference' && state.status === 'paused') {
+        continueInference();
+      } else if (command.type === 'introduce-storm' && scenario.dustStorm && !state.stormIntroduced && state.status !== 'ended') {
         const { durationMs, ...configuration } = scenario.dustStorm;
         storm = { ...structuredClone(configuration), id: 'dust-storm', expiresAtMs: state.elapsedMs + durationMs };
         state.stormIntroduced = true;
@@ -552,16 +608,19 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         state.status = 'paused';
         record({ type: 'paused' });
       } else if (command.type === 'retry-decision' && state.status === 'paused' && state.decisionFailure
-        && controller.id === 'typesafe' && !inFlight && state.inferenceAttempts < INFERENCE_LIMIT) {
+        && !state.usagePause && controller.id === 'typesafe' && !inFlight
+        && (state.inferenceLimits ? !checkUsageGuard() : state.inferenceAttempts < INFERENCE_LIMIT)) {
         resumeAfterDecisionFailure('retry');
-      } else if (command.type === 'continue-with-baseline' && state.status === 'paused' && state.decisionFailure
+      } else if (command.type === 'continue-with-baseline' && state.status === 'paused' && (state.decisionFailure || state.usagePause)
         && controller.id === 'typesafe' && !inFlight) {
-        record({ type: 'controller-changed', from: controller.id, to: baseline.id, failure: state.decisionFailure });
+        record({ type: 'controller-changed', from: controller.id, to: baseline.id,
+          ...(state.decisionFailure ? { failure: state.decisionFailure } : {}), ...(state.usagePause ? { usagePause: state.usagePause } : {}) });
+        if (state.inferenceLimits) state.usagePause = null;
         controller = baseline;
         state.controller = controller.id;
         state.controllerHistory.push({ controller: controller.id, atMs: state.elapsedMs, firstDecisionId: decisions.length + 1 });
         resumeAfterDecisionFailure('controller-changed');
-      } else if (command.type === 'resume' && state.status === 'paused' && !state.decisionFailure) {
+      } else if (command.type === 'resume' && state.status === 'paused' && !state.decisionFailure && !state.usagePause && !checkUsageGuard()) {
         state.status = 'running';
         record({ type: 'resumed' });
         selectAction();
@@ -572,7 +631,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         record({ type: 'speed-changed', speed: command.speed });
       } else if (command.type === 'reset') {
         invalidateDecision();
-        if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: controller.id });
+        if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: actionController });
         expedition++;
         expeditionId = crypto.randomUUID();
         runStartingConditions = { ...startingConditions, objective, instructions, controller: controller.id };
@@ -582,6 +641,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         state = initialState();
         pendingMs = 0;
         previousAction = null;
+        actionController = controller.id;
         route = [];
         actionProgressMs = 0;
         waypointStart = { ...scenario.base };
@@ -605,6 +665,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     while (replay?.next && replay.next.atMs === state.elapsedMs) {
       const event = replay.next;
       switch (event.type) {
+        case 'inference-limits-changed': session.dispatch({ type: 'set-inference-limits', limits: event.limits }); break;
+        case 'usage-acknowledged': session.dispatch({ type: 'acknowledge-usage', attemptIds: event.attemptIds }); break;
+        case 'usage-paused': checkUsageGuard(); break;
+        case 'inference-continued': session.dispatch({ type: 'continue-inference' }); break;
         case 'started': session.dispatch({ type: 'start' }); break;
         case 'paused': session.dispatch({ type: 'pause' }); break;
         case 'resumed': session.dispatch({ type: state.decisionFailure ? 'retry-decision' : 'resume' }); break;

@@ -77,20 +77,20 @@ test('a read-only reconciliation confirms lost local responses once, without ret
   } }) });
   session.dispatch({ type: 'start' });
   await settled(session);
-  expect(session.getSnapshot().usage).toMatchObject({ providerAttempts: 0, unconfirmedSubmissions: 2, estimatedCost: null });
+  expect(session.getSnapshot().usage).toMatchObject({ providerAttempts: 0, unconfirmedSubmissions: 1, estimatedCost: null });
   session.dispatch({ type: 'stop' });
   session.dispatch({ type: 'reset' });
   await session.refreshInferenceUsage();
-  expect(outbound).toBe(2);
+  expect(outbound).toBe(1);
   const record = session.getCompletedRecords()[0]!;
-  expect(record.results.usage).toMatchObject({ providerAttempts: 2, retries: 1, unconfirmedSubmissions: 0,
-    inputTokens: 2000, outputTokens: 80, estimatedCost: 0.000084 });
+  expect(record.results.usage).toMatchObject({ providerAttempts: 1, retries: 0, unconfirmedSubmissions: 0,
+    inputTokens: 1000, outputTokens: 40, estimatedCost: 0.000042 });
   expect(record.decisions[0]!.status).toBe('failed');
   expect(session.getSnapshot().usage!.localSubmissions).toBe(0);
   const before = JSON.stringify(record);
   await session.refreshInferenceUsage();
   expect(JSON.stringify(session.getCompletedRecords()[0])).toBe(before);
-  expect(outbound).toBe(2);
+  expect(outbound).toBe(1);
   verifyReplay(record);
 });
 
@@ -192,12 +192,12 @@ test('transport failure and an unavailable ledger retain uncertainty without fab
   } }) });
   session.dispatch({ type: 'start' });
   await settled(session);
-  expect(session.getSnapshot().usage).toMatchObject({ providerAttempts: 2, retries: 1, inputTokens: null, estimatedCost: null });
+  expect(session.getSnapshot().usage).toMatchObject({ providerAttempts: 1, retries: 0, inputTokens: null, estimatedCost: null });
   expect(session.getDecisions()[0]!.accounting!.attempts.every(item => item.evidence!.execution === 'transport-error')).toBe(true);
   const before = session.getDecisions();
   await session.refreshInferenceUsage();
   expect(session.getDecisions()).toEqual(before);
-  expect(outbound).toBe(2);
+  expect(outbound).toBe(1);
   session.dispatch({ type: 'stop' });
   verifyReplay(session.getCompletedRecords()[0]!);
 });
@@ -247,7 +247,7 @@ test('a lost local request stays unconfirmed and refresh has its own bounded wai
   session.dispatch({ type: 'start' });
   await settled(session);
   const snapshot = session.getSnapshot();
-  expect(snapshot.usage).toMatchObject({ providerAttempts: 0, unconfirmedSubmissions: 2, inputTokens: null, estimatedCost: null });
+  expect(snapshot.usage).toMatchObject({ providerAttempts: 0, unconfirmedSubmissions: 1, inputTokens: null, estimatedCost: null });
   let done = false;
   const first = session.refreshInferenceUsage().then(() => { done = true; });
   const duplicate = session.refreshInferenceUsage();
@@ -257,8 +257,8 @@ test('a lost local request stays unconfirmed and refresh has its own bounded wai
   clock.advance(1);
   await first;
   await duplicate;
-  expect(reads).toBe(2);
-  expect(submissions).toBe(2);
+  expect(reads).toBe(1);
+  expect(submissions).toBe(1);
   expect(session.getSnapshot()).toEqual(snapshot);
   session.dispatch({ type: 'stop' });
   verifyReplay(session.getCompletedRecords()[0]!);

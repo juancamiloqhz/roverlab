@@ -203,3 +203,8 @@ footer { display: flex; justify-content: space-between; gap: 20px; border-top: 1
 .attempt-evidence { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid #334650; overflow-wrap: anywhere; }
 .attempt-evidence h5 { margin: 0 0 0.5rem; font-size: 0.9rem; }
 .attempt-evidence a { color: #82d4ce; }
+
+.inference-limits { display: grid; gap: 12px; }
+.inference-limits label { display: grid; gap: 6px; color: #9cafa3; font-size: 12px; }
+.inference-limits input { width: 100%; min-width: 0; padding: 9px; border: 1px solid #35414c; border-radius: 6px; background: #121a22; color: #e8eef3; }
+.recovery-panel li, .inference-limit-history { overflow-wrap: anywhere; }

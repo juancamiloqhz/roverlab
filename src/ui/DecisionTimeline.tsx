@@ -63,12 +63,12 @@ export function DecisionTimeline({ decisions, controllerHistory }: { decisions: 
     <h3>Decision timeline <span>{decisions.length}</span></h3>
     <p className="memory-note">Baseline decisions use fixed rules. No model probabilities or reasoning are produced for baseline decisions. TypeSafe probabilities compare the offered choices; they are not utility, science score, a guarantee of correctness, or generated reasoning. A valid uncertain choice continues autonomously.</p>
     {decisions.length ? <ol>{decisions.map(decision => {
-      const transitionIndex = controllerHistory.findIndex(entry => entry.firstDecisionId === decision.id);
+      const transitionIndex = controllerHistory.findIndex((entry, index) => index > 0 && entry.firstDecisionId === decision.id);
       const transition = transitionIndex > 0 ? controllerHistory[transitionIndex] : undefined;
       return <Fragment key={decision.id}>
         {transition && <li className="controller-transition">
           <strong>{controllerLabels[controllerHistory[transitionIndex - 1]!.controller]} → {controllerLabels[transition.controller]}</strong>
-          <p>{seconds(transition.atMs)} · Mission control explicitly continued after an inference failure.</p>
+          <p>{seconds(transition.atMs)} · Mission control explicitly continued after an inference failure or usage pause.</p>
         </li>}
         <DecisionEntry decision={decision} />
       </Fragment>;

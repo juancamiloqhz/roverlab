@@ -44,7 +44,7 @@ test('a Jev choice retains confirmed outbound usage, identities and token-derive
   expect(record.id).toBe(attempt.submission.identity.expeditionId);
   const json = exportExpeditionRecord(record);
   const reopened = importExpeditionRecord(json);
-  expect(reopened.version).toBe(3);
+  expect(reopened.version).toBe(4);
   expect(reopened).toEqual(JSON.parse(json));
   const replay = createReplay(reopened);
   replay.dispatch({ type: 'start' });
@@ -179,7 +179,7 @@ test('decision wait and attempt timing are independent of expedition time and ar
   expect(importExpeditionRecord(exportExpeditionRecord(session.getCompletedRecords()[0]!)).results.inferenceLatencyMs).toBe(1900);
 });
 
-test('a retry has its own confirmed outbound identity and leaves missing usage incomplete', async () => {
+test('explicit continuation has its own confirmed outbound identity and leaves acknowledged usage incomplete', async () => {
   let outbound = 0;
   const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async (_url, init) => {
     if (++outbound === 1) return new Response('private provider error', { status: 503 });
@@ -191,13 +191,16 @@ test('a retry has its own confirmed outbound identity and leaves missing usage i
   }) });
   session.dispatch({ type: 'start' });
   await settled(session);
+  expect(outbound).toBe(1);
+  session.dispatch({ type: 'acknowledge-usage', attemptIds: session.getSnapshot().usagePause!.attemptIds });
+  await settled(session);
   expect(outbound).toBe(2);
-  expect(session.getSnapshot().usage).toMatchObject({ controllerDecisions: 1, localSubmissions: 2, providerAttempts: 2,
-    retries: 1, unconfirmedSubmissions: 0, estimatedCost: null, knownEstimatedCost: 0.000042, inputTokens: null, outputTokens: null });
-  const attempts = session.getDecisions()[0]!.accounting!.attempts;
-  expect(attempts.map(item => item.submission.retryIndex)).toEqual([0, 1]);
+  expect(session.getSnapshot().usage).toMatchObject({ controllerDecisions: 2, localSubmissions: 2, providerAttempts: 2,
+    retries: 0, unconfirmedSubmissions: 0, estimatedCost: null, knownEstimatedCost: 0.000042, inputTokens: null, outputTokens: null });
+  const attempts = session.getDecisions().flatMap(decision => decision.accounting!.attempts);
+  expect(attempts.map(item => item.submission.retryIndex)).toEqual([0, 0]);
   expect(new Set(attempts.map(item => item.submission.identity.attemptId)).size).toBe(2);
-  expect(attempts[0]!.submission.identity.decisionId).toBe(attempts[1]!.submission.identity.decisionId);
+  expect(attempts[0]!.submission.identity.decisionId).not.toBe(attempts[1]!.submission.identity.decisionId);
   session.dispatch({ type: 'stop' });
   const json = exportExpeditionRecord(session.getCompletedRecords()[0]!);
   expect(json).not.toContain('private provider error');

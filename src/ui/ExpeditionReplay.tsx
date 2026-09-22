@@ -1,3 +1,4 @@
+import { InferenceAllowances } from './InferenceLimits';
 import { UsageSummary } from './InferenceUsage';
 import { useState } from 'react';
 import type { ExpeditionSession } from '../simulation/expedition';
@@ -32,7 +33,7 @@ export function ExpeditionReplay({ session }: { session: ExpeditionSession }) {
       </div>
       <aside className="telemetry" aria-label="Replay telemetry">
         <div className="panel-title">RECORDED MISSION</div>
-        <UsageSummary usage={snapshot.usage} localSubmissions={snapshot.inferenceAttempts} waitMs={snapshot.inferenceLatencyMs} label="Historical inference usage" />
+        <InferenceAllowances snapshot={snapshot} /><UsageSummary usage={snapshot.usage} localSubmissions={snapshot.inferenceAttempts} waitMs={snapshot.inferenceLatencyMs} label="Historical inference usage" />
         <p>{scientificObjectives[snapshot.objective]}</p>
         <p className="replay-note">{controllerLabels[snapshot.controller]}</p>
         <div className="time-block"><span className="field-label">ELAPSED EXPEDITION TIME</span><div className="timer" aria-label="Replay elapsed time">{formatTime(snapshot.elapsedMs)}</div></div>

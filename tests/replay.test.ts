@@ -85,9 +85,9 @@ test.each([false, true])('TypeSafe choices and recovery replay without inference
   let fail = false;
   const handler = createDecisionHandler({ apiKey: 'replay-scripted-service', fetch: async (_url, init) => {
     calls++;
-    if (fail) return new Response('Unavailable', { status: 503 });
+    if (fail) return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 } }, { status: 503 });
     const input = JSON.parse(init!.body as string).state;
-    return Response.json({ answers: { action: { type: 'choice', choice: chooseBaselineAction(input).id, confidence: 0,
+    return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 }, answers: { action: { type: 'choice', choice: chooseBaselineAction(input).id, confidence: 0,
       probabilities: Object.fromEntries(input.candidates.map((candidate: { id: string }) => [candidate.id, 1 / input.candidates.length])),
     } } });
   } });

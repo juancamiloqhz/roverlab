@@ -47,10 +47,10 @@ test('invalid TypeSafe output visibly pauses with stop and reset available and n
   await page.getByRole('button', { name: 'Start expedition' }).click();
   await expect(page.getByRole('status')).toContainText('TypeSafe returned an invalid decision');
   await expect(page.getByRole('button', { name: 'Resume expedition' })).toBeDisabled();
-  await expect(page.getByLabel('Inference usage')).toContainText('1 / 100');
+  await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 1');
   await expect(page.getByRole('button', { name: 'Stop expedition' })).toBeEnabled();
   await page.getByRole('button', { name: 'Reset expedition' }).click();
-  await expect(page.getByLabel('Inference usage')).toContainText('0 / 100');
+  await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 0');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('baseline');
   await page.getByRole('button', { name: 'Start expedition' }).click();
   await expect(page.getByLabel('Current action')).toContainText('Explore');
@@ -71,7 +71,7 @@ test('mission control retries failures, then explicitly continues with baseline 
   await page.clock.runFor(10_000);
   await expect(page.getByLabel('Remaining expedition time')).toHaveText('05:00');
   await recovery.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(page.getByLabel('Inference usage')).toContainText('2 / 100');
+  await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 2');
   await expect(recovery).toBeVisible();
   await instructions.fill('Hold for browser verification');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
@@ -80,12 +80,12 @@ test('mission control retries failures, then explicitly continues with baseline 
   await expect(recovery).toHaveCount(0);
   await request.post('http://127.0.0.1:4174/release');
   await expect(page.getByLabel('Current action')).toContainText('Wait');
-  await expect(page.getByLabel('Inference usage')).toContainText('3 / 100');
+  await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 3');
   await instructions.fill('Invalid choice for browser verification');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
   await page.clock.runFor(5_000);
   await expect(recovery).toBeVisible();
-  await expect(page.getByLabel('Inference usage')).toContainText('4 / 100');
+  await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 4');
   await recovery.getByRole('button', { name: 'Continue with the baseline controller' }).click();
   await expect(page.getByLabel('Current action')).toContainText('Explore');
   await expect(page.getByLabel('Remaining expedition time')).toHaveText('04:55');
@@ -104,5 +104,5 @@ test('mission control retries failures, then explicitly continues with baseline 
   await page.screenshot({ path: 'test-results/typesafe-recovery.png', fullPage: true });
   await page.getByRole('button', { name: 'Reset expedition' }).click();
   await expect(timeline).not.toContainText('TypeSafe controller → Baseline controller');
-  await expect(page.getByLabel('Inference usage')).toContainText('0 / 100');
+  await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 0');
 });

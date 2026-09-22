@@ -98,7 +98,7 @@ test('TypeSafe-only and mixed-controller histories survive browser storage and i
   await page.clock.fastForward(5_000);
   await expect(page.getByRole('region', { name: 'Inference recovery' })).toBeVisible();
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(page.getByLabel('Inference usage')).toContainText('3 / 100');
+  await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 3');
   await page.getByRole('button', { name: 'Continue with the baseline controller' }).click();
   await page.clock.fastForward(90_000);
   await page.getByRole('button', { name: 'Introduce dust storm' }).click();

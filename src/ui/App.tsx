@@ -1,3 +1,4 @@
+import { InferenceLimitSetup, InferenceUsagePause } from './InferenceLimits';
 import { UsageSummary } from './InferenceUsage';
 import { useState } from 'react';
 import { ExpeditionResults } from './ExpeditionResults';
@@ -13,7 +14,7 @@ import { StormControl } from './StormControl';
 import { MissionInstructions } from './MissionInstructions';
 import { useExpedition } from './useExpedition';
 import './styles.css';
-import { failureMessages, INFERENCE_LIMIT } from '../../shared/decisions';
+import { failureMessages } from '../../shared/decisions';
 import { controllerLabels } from './controllerLabels';
 
 function describeAction(action: Action | null, status: ExpeditionSnapshot['status']) {
@@ -54,10 +55,10 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
   const samples = snapshot.memory.filter(item => item.kind === 'sample');
   const currentIds = new Set(snapshot.observations.map(item => item.id));
   const active = status === 'running' || status === 'paused';
-  const statusLabel = snapshot.decisionPending && active ? 'Decision pending · Expedition time frozen' : { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
+  const statusLabel = snapshot.usagePause && active ? 'Inference usage paused · Expedition time frozen' : snapshot.decisionPending && active ? 'Decision pending · Expedition time frozen' : { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
   const { label: actionLabel, description: actionDescription } = snapshot.decisionPending && active
     ? { label: 'Awaiting decision', description: 'Expedition time and resources are frozen. Camera and mission controls remain available.' }
-    : snapshot.decisionFailure && active ? { label: 'Decision paused', description: failureMessages[snapshot.decisionFailure] } : describeAction(currentAction, status);
+    : snapshot.usagePause && active ? { label: 'Inference usage paused', description: 'Review the usage guards and choose how to continue.' } : snapshot.decisionFailure && active ? { label: 'Decision paused', description: failureMessages[snapshot.decisionFailure] } : describeAction(currentAction, status);
 
   return (
     <div className="app-shell">
@@ -80,22 +81,22 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
               <div className="transport">
                 {status === 'ready' && <button className="primary" onClick={() => dispatch({ type: 'start' })}><span aria-hidden="true">▶</span> Start expedition</button>}
                 {status === 'running' && <button className="primary" onClick={() => dispatch({ type: 'pause' })}><span aria-hidden="true">Ⅱ</span> Pause expedition</button>}
-                {status === 'paused' && <button className="primary" disabled={!!snapshot.decisionFailure} onClick={() => dispatch({ type: 'resume' })}><span aria-hidden="true">▶</span> Resume expedition</button>}
+                {status === 'paused' && <button className="primary" disabled={!!snapshot.decisionFailure || !!snapshot.usagePause} onClick={() => dispatch({ type: 'resume' })}><span aria-hidden="true">▶</span> Resume expedition</button>}
                 {status === 'ended' && <span className="complete-label">Expedition complete</span>}
                 <button className="secondary" aria-label="Stop expedition" disabled={!active} onClick={() => dispatch({ type: 'stop' })}>Stop</button>
                 <button className="secondary" aria-label="Reset expedition" onClick={() => dispatch({ type: 'reset' })}><span aria-hidden="true">↻</span> Reset</button>
               </div>
               <div className="speed-control" role="group" aria-label="Playback speed"><span>Playback</span>{([1, 2, 4] as const).map(speed => <button key={speed} aria-pressed={snapshot.speed === speed} disabled={status === 'ended'} onClick={() => dispatch({ type: 'set-speed', speed })}>{speed}×</button>)}</div>
             </section>
-            {snapshot.decisionFailure && status === 'paused' && <section className="recovery-panel" aria-label="Inference recovery">
+            <InferenceUsagePause snapshot={snapshot} decisions={decisions} dispatch={dispatch} />
+            {snapshot.decisionFailure && !snapshot.usagePause && status === 'paused' && <section className="recovery-panel" aria-label="Inference recovery">
               <p role="status">{failureMessages[snapshot.decisionFailure]}</p>
               {snapshot.controller === 'typesafe' && <>
                 <p>Expedition time and resources remain paused. Retry uses the current mission instructions and remaining inference budget. Continuing with baseline resumes this expedition and records the controller change.</p>
                 <div className="recovery-actions">
-                  <button className="primary" disabled={snapshot.inferenceAttempts >= INFERENCE_LIMIT || snapshot.decisionPending} onClick={() => dispatch({ type: 'retry-decision' })}>Retry</button>
+                  <button className="primary" disabled={snapshot.decisionPending} onClick={() => dispatch({ type: 'retry-decision' })}>Retry</button>
                   <button className="secondary" disabled={snapshot.decisionPending} onClick={() => dispatch({ type: 'continue-with-baseline' })}>Continue with the baseline controller</button>
                 </div>
-                {snapshot.inferenceAttempts >= INFERENCE_LIMIT && <p>Retry unavailable: all {INFERENCE_LIMIT} local submissions have been used. Continue with baseline, stop, or reset for a new expedition.</p>}
               </>}
             </section>}
             <p className="world-note"><span aria-hidden="true">↳</span> You set the pace. The rover chooses its own targets and routes.</p>
@@ -112,8 +113,9 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
                 {snapshot.controller === 'scripted' && <option value="scripted">Scripted verification</option>}
               </select>
               <p className="memory-note">Select before starting. Reset to change controller.</p>
-              <UsageSummary usage={snapshot.usage} localSubmissions={snapshot.inferenceAttempts} waitMs={snapshot.inferenceLatencyMs} limit={INFERENCE_LIMIT} />
+              <UsageSummary usage={snapshot.usage} localSubmissions={snapshot.inferenceAttempts} waitMs={snapshot.inferenceLatencyMs} />
             </section>
+            <InferenceLimitSetup snapshot={snapshot} decisions={decisions} dispatch={dispatch} />
             <section className="objective-block">
               <label className="field-label" htmlFor="scientific-objective">SCIENTIFIC OBJECTIVE</label>
               <select id="scientific-objective" disabled={status !== 'ready'} value={snapshot.objective} onChange={event => dispatch({ type: 'set-objective', objective: event.target.value as ScientificObjective })}>

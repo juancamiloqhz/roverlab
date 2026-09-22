@@ -37,7 +37,7 @@ export function createTypeSafeController(options: {
       for (let attempt = 0; attempt < 2; attempt++) {
         if (abort.signal.aborted || clock.now() >= expiresAt) return { failure: context.signal.aborted ? 'cancelled' : 'deadline' };
         const identity = context.reserveAttempt(attempt as 0 | 1);
-        if (!identity) return { failure: 'budget' };
+        if (!identity) return { failure: 'usage-paused' };
         try {
           const response = await transport('/api/decision', { method: 'POST',
             headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input, expiresAt, identity }), signal: abort.signal });

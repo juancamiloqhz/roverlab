@@ -20,7 +20,9 @@ function manualClock() {
   };
 }
 const flush = () => Bun.sleep(0);
-const success = (input: ControllerInput, selected = 'wait:5000') => Response.json({
+const knownUsage = { model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 } };
+const transient = () => Response.json({ ...knownUsage, error: 'temporary' }, { status: 503 });
+const success = (input: ControllerInput, selected = 'wait:5000') => Response.json({ ...knownUsage,
   answers: { action: { type: 'choice', choice: selected, confidence: 0,
     probabilities: Object.fromEntries(input.candidates.map(candidate => [candidate.id, 1 / input.candidates.length])) } },
 });
@@ -47,7 +49,7 @@ test('an uncertain TypeSafe Choice executes an offered action and records its ac
     const body = JSON.parse(init!.body as string);
     requests.push(body);
     const ids = Object.keys(body.questions.action.criteria);
-    return Response.json({ answers: { action: { type: 'choice', choice: 'wait:5000', confidence: 0,
+    return Response.json({ ...knownUsage, answers: { action: { type: 'choice', choice: 'wait:5000', confidence: 0,
       probabilities: Object.fromEntries(ids.map(id => [id, 1 / ids.length])) } } });
   } });
   const controller = createTypeSafeController({ fetch: (url, init) => handler(new Request(new URL(url, 'http://localhost'), init)) });
@@ -68,7 +70,7 @@ test('one retry follows a transient external failure and both attempts are recor
   let attempts = 0;
   const { expedition } = expeditionWithService(async (_url, init) => {
     attempts++;
-    if (attempts === 1) return new Response('temporary', { status: 503 });
+    if (attempts === 1) return transient();
     expect(new Headers(init!.headers).has('X-TypeSafe-Retry-Count')).toBe(false);
     return success(JSON.parse(init!.body as string).state);
   });
@@ -87,7 +89,7 @@ test('a retry shares the five-second total deadline, aborts the SDK and freezes 
   let retrySignal!: AbortSignal;
   const { expedition } = expeditionWithService((_url, init) => {
     attempts++;
-    if (attempts === 1) return new Promise(resolve => { release = () => resolve(new Response('temporary', { status: 503 })); });
+    if (attempts === 1) return new Promise(resolve => { release = () => resolve(transient()); });
     retrySignal = init!.signal!;
     return new Promise((_resolve, reject) => retrySignal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }));
   }, { clock });
@@ -159,6 +161,10 @@ test.each(['set-instructions', 'reset', 'stop'] as const)('%s cancels the extern
   pending[0]!.resolve(success(pending[0]!.input, pending[0]!.input.candidates[0]!.id));
   await flush();
   expect(expedition.getRecord().events.filter(event => event.type === 'action-started')).toHaveLength(0);
+  if (command === 'set-instructions') {
+    expedition.dispatch({ type: 'acknowledge-usage', attemptIds: expedition.getSnapshot().usagePause!.attemptIds });
+    await flush();
+  }
   if (command !== 'stop') {
     expect(pending).toHaveLength(2);
     expect(expedition.getSnapshot().inferenceAttempts).toBe(command === 'reset' ? 1 : 2);
@@ -167,29 +173,6 @@ test.each(['set-instructions', 'reset', 'stop'] as const)('%s cancels the extern
     expect(expedition.getSnapshot().currentAction?.kind).toBe('wait');
   } else expect(expedition.getSnapshot()).toMatchObject({ status: 'ended', inferenceAttempts: 1 });
   expect(expedition.getRecord().events.filter(event => event.type === 'decision-settled')[0]).toMatchObject({ expedition: 1, decision: { status: 'discarded', inferenceAttempts: 1 } });
-});
-
-test.each([false, true])('the 100-attempt cap stops the next attempt, including a retry at the limit (%s)', async failLast => {
-  let attempts = 0;
-  const { expedition } = expeditionWithService(async (_url, init) => {
-    attempts++;
-    if (attempts < 100) return new Promise((_resolve, reject) => init!.signal!.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }));
-    if (attempts === 100 && failLast) return new Response('retryable', { status: 503 });
-    return success(JSON.parse(init!.body as string).state);
-  });
-  expedition.dispatch({ type: 'start' });
-  await flush();
-  for (let i = 1; i < 100; i++) {
-    expedition.dispatch({ type: 'set-instructions', instructions: `Instructions ${i}` });
-    await flush();
-  }
-  expect(expedition.getSnapshot().inferenceAttempts).toBe(100);
-  if (!failLast) {
-    expedition.advanceWallTime(5_000);
-    await settled(expedition);
-  }
-  expect(expedition.getSnapshot().decisionFailure).toBe('budget');
-  expect(attempts).toBe(100);
 });
 
 test('a complete TypeSafe expedition uses only rover knowledge through exploration, inspection, delivery and recharge', async () => {
@@ -221,7 +204,7 @@ test('persistent service failure stops after two attempts and cannot leak echoed
     let attempts = 0;
     const { expedition, responses } = expeditionWithService(async () => {
       attempts++;
-      return new Response('test-key-never-expose', { status: 503 });
+      return Response.json({ ...knownUsage, error: 'test-key-never-expose' }, { status: 503 });
     });
     expedition.dispatch({ type: 'start' });
     await settled(expedition);
@@ -336,7 +319,7 @@ test('mission control retries a failed decision with current instructions and th
   const { expedition } = expeditionWithService((_url, init) => {
     const input = JSON.parse(init!.body as string).state as ControllerInput;
     inputs.push(input);
-    if (inputs.length <= 2) return Promise.resolve(new Response('temporary', { status: 503 }));
+    if (inputs.length <= 2) return Promise.resolve(transient());
     return new Promise(resolve => { release = () => resolve(success(input)); });
   }, { clock });
   expedition.dispatch({ type: 'start' });
@@ -421,15 +404,16 @@ test('explicit baseline continuation preserves cargo, earned science and resourc
   expect(expedition.getSnapshot().controllerHistory).toEqual([{ controller: 'baseline', atMs: 0, firstDecisionId: 1 }]);
 });
 
-test.each([false, true])('repeated recovery failures reach attempt 99 and manual retry obeys the cap (last attempt fails: %s)', async failLast => {
+test.each([false, true])('repeated recovery failures preserve usage and manual retry obeys a configured provider allowance (last attempt fails: %s)', async failLast => {
   let attempts = 0;
   const { expedition } = expeditionWithService(async (_url, init) => {
     attempts++;
     const input = JSON.parse(init!.body as string).state as ControllerInput;
     if (attempts === 1) return success(input, 'invented');
     if (attempts === 100 && !failLast) return success(input);
-    return new Response('temporary', { status: 503 });
+    return transient();
   });
+  expedition.dispatch({ type: 'set-inference-limits', limits: { providerAttempts: 100, estimatedCost: 0.1 } });
   expedition.dispatch({ type: 'start' });
   await settled(expedition);
   for (let retry = 0; retry < 49; retry++) {
@@ -443,10 +427,8 @@ test.each([false, true])('repeated recovery failures reach attempt 99 and manual
   await settled(expedition);
   if (!failLast) {
     expect(expedition.getSnapshot().currentAction?.kind).toBe('wait');
-    expedition.advanceWallTime(5_000);
-    await settled(expedition);
   }
-  expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', decisionFailure: 'budget', inferenceAttempts: 100 });
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', decisionFailure: null, usagePause: { reasons: ['attempt-limit'] }, inferenceAttempts: 100 });
   const exhausted = expedition.getSnapshot();
   expedition.dispatch({ type: 'retry-decision' });
   expedition.dispatch({ type: 'resume' });
@@ -475,7 +457,8 @@ test.each(['retry-decision', 'continue-with-baseline', 'reset', 'stop'] as const
     await flush();
     expect(expedition.getSnapshot().decisionFailure).toBe('deadline');
     expect(pending[0]!.signal.aborted).toBe(true);
-    expedition.dispatch({ type: command });
+    if (command === 'retry-decision') expedition.dispatch({ type: 'acknowledge-usage', attemptIds: expedition.getSnapshot().usagePause!.attemptIds });
+    else expedition.dispatch({ type: command });
     if (command === 'reset') expedition.dispatch({ type: 'start' });
     await flush();
     const recovered = expedition.getSnapshot();

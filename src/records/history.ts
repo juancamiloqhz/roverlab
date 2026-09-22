@@ -1,3 +1,4 @@
+import { inferenceGuard, type UsagePause } from '../../shared/limits';
 import { canUpdateEvidence, sameAttempt } from '../../shared/inference';
 import type { Action, ControllerHistoryEntry, Decision, ExpeditionRecord } from '../simulation/types';
 
@@ -17,6 +18,9 @@ export function sameRecordData(left: unknown, right: unknown): boolean {
 // re-simulates movement, perception, scoring, or controller decisions.
 export function hasConsistentHistory(record: ExpeditionRecord): boolean {
   const { startingConditions: start, results: final } = record;
+  let limits = start.inferenceLimits;
+  const acknowledged: string[] = [];
+  let usagePause: UsagePause | null = null;
   let controller = start.controller;
   let objective = start.objective;
   let instructions = start.instructions;
@@ -26,6 +30,7 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
   let attempts = 0;
   let pendingId: number | null = null;
   let activeAction: Action | null = null;
+  let actionController = controller;
   let selectedAction: Action | null = null;
   const decisions = new Map<number, Decision>();
   const invalid = new Set<number>();
@@ -34,6 +39,29 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
   for (const event of record.events) {
     if (ended && event.type !== 'decision-settled' && !(record.version >= 3 && event.type === 'inference-accounted')) return false;
     switch (event.type) {
+      case 'inference-limits-changed':
+        if (!limits || pendingId !== null || (started && (!usagePause
+          || event.limits.providerAttempts < limits.providerAttempts || event.limits.estimatedCost < limits.estimatedCost))) return false;
+        limits = event.limits;
+        break;
+      case 'usage-acknowledged': {
+        if (!limits || !usagePause || pendingId !== null) return false;
+        const affected = inferenceGuard([...decisions.values()], limits, acknowledged).attemptIds;
+        if (!sameRecordData(event.attemptIds, affected) || !affected.length) return false;
+        acknowledged.push(...affected);
+        break;
+      }
+      case 'usage-paused': {
+        if (!started || !limits || controller !== 'typesafe' || pendingId !== null) return false;
+        const guard = inferenceGuard([...decisions.values()], limits, acknowledged);
+        if ((!usagePause && !guard.reasons.length) || sameRecordData(usagePause, guard) || !sameRecordData(event.pause, guard)) return false;
+        usagePause = event.pause;
+        break;
+      }
+      case 'inference-continued':
+        if (!limits || !usagePause || pendingId !== null || inferenceGuard([...decisions.values()], limits, acknowledged).reasons.length) return false;
+        usagePause = null;
+        break;
       case 'started':
         if (started) return false;
         started = true;
@@ -54,7 +82,10 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
       case 'controller-changed': {
         const previous = decisions.get(decisions.size);
         if (!started || controller !== 'typesafe' || event.from !== controller || event.to !== 'baseline'
-          || !previous?.failure || previous.failure !== event.failure) return false;
+          || pendingId !== null || (activeAction !== null && !event.usagePause)
+          || (event.usagePause ? !sameRecordData(event.usagePause, usagePause) : !previous?.failure || previous.failure !== event.failure)
+          || (event.failure !== undefined && previous?.failure !== event.failure)) return false;
+        usagePause = null;
         controller = event.to;
         history.push({ controller, atMs: event.atMs, firstDecisionId: decisions.size + 1 });
         break;
@@ -71,6 +102,7 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
       }
       case 'inference-attempt': {
         const decision = decisions.get(event.decisionId);
+        if (limits && inferenceGuard([...decisions.values()], limits, acknowledged).reasons.length) return false;
         if (!decision || pendingId !== decision.id || decision.status !== 'pending'
           || event.controller !== decision.controller || event.attempt !== ++attempts) return false;
         decision.inferenceAttempts++;
@@ -124,11 +156,12 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
       case 'action-started':
         if (activeAction || !selectedAction || event.controller !== controller || !sameRecordData(event.action, selectedAction)) return false;
         activeAction = event.action;
+        actionController = event.controller;
         selectedAction = null;
         break;
       case 'action-completed':
       case 'action-cancelled':
-        if (!activeAction || event.controller !== controller || !sameRecordData(event.action, activeAction)) return false;
+        if (!activeAction || event.controller !== actionController || !sameRecordData(event.action, activeAction)) return false;
         activeAction = null;
         break;
       case 'ended':
@@ -137,7 +170,8 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
         break;
     }
   }
-  return ended && pendingId === null && (final.elapsedMs === 0 || decisions.size > 0)
+  return (!limits || (sameRecordData(limits, final.inferenceLimits) && sameRecordData(acknowledged, final.acknowledgedAttemptIds)
+    && sameRecordData(usagePause, final.usagePause))) && ended && pendingId === null && (final.elapsedMs === 0 || decisions.size > 0)
     && sameRecordData([...decisions.values()], record.decisions) && sameRecordData(history, final.controllerHistory)
     && controller === final.controller && objective === final.objective && attempts === final.inferenceAttempts
     && instructions === final.instructions && instructionsVersion === final.instructionsVersion;

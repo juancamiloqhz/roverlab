@@ -1,3 +1,4 @@
+import { inferenceLimitsSchema, usagePauseSchema } from '../../shared/limits';
 import { accountingSchema, attemptEvidenceSchema, inferenceUsageSchema, submissionSchema, summarizeUsage } from '../../shared/inference';
 import { z } from 'zod';
 import { hasConsistentHistory, sameRecordData } from './history';
@@ -25,6 +26,7 @@ const history = z.array(z.strictObject({ controller, atMs: number, firstDecision
 const observations = z.array(observationSchema).max(10_000);
 
 const startingConditions: z.ZodType<ExpeditionStartingConditions> = z.strictObject({
+  inferenceLimits: inferenceLimitsSchema.optional(),
   scenario: z.strictObject({
     id: identity, name: text, width: integer.positive().max(100), depth: integer.positive().max(100), base: position, sensorRange: number,
     dustStorm: z.strictObject({ ...stormFields, durationMs: number.positive() }).optional(),
@@ -69,8 +71,12 @@ const event: z.ZodType<ExpeditionEvent> = z.discriminatedUnion('type', [
   z.strictObject({ ...eventFields, type: z.literal('storm-expired'), stormId: identity, detected: z.boolean() }),
   z.strictObject({ ...eventFields, type: z.literal('storm-effects-changed'), sensorRange: number, movementEnergyMultiplier: number.min(1) }),
   z.strictObject({ ...eventFields, type: z.literal('controller-selected'), controller }),
-  z.strictObject({ ...eventFields, type: z.literal('controller-changed'), from: controller, to: controller, failure: failureSchema }),
-  z.strictObject({ ...eventFields, type: z.literal('inference-attempt'), decisionId: integer.positive(), attempt: integer.positive().max(INFERENCE_LIMIT), controller, submission: submissionSchema.optional() }),
+  z.strictObject({ ...eventFields, type: z.literal('controller-changed'), from: controller, to: controller, failure: failureSchema.optional(), usagePause: usagePauseSchema.optional() }),
+  z.strictObject({ ...eventFields, type: z.literal('inference-limits-changed'), limits: inferenceLimitsSchema }),
+  z.strictObject({ ...eventFields, type: z.literal('usage-acknowledged'), attemptIds: z.array(z.uuid()).min(1).max(20_000) }),
+  z.strictObject({ ...eventFields, type: z.literal('usage-paused'), pause: usagePauseSchema }),
+  z.strictObject({ ...eventFields, type: z.literal('inference-continued') }),
+  z.strictObject({ ...eventFields, type: z.literal('inference-attempt'), decisionId: integer.positive(), attempt: integer.positive().max(Number.MAX_SAFE_INTEGER), controller, submission: submissionSchema.optional() }),
   z.strictObject({ ...eventFields, type: z.literal('inference-accounted'), evidence: attemptEvidenceSchema }),
   z.strictObject({ ...eventFields, type: z.literal('decision-settled'), decision }),
   z.strictObject({ ...eventFields, type: z.literal('instructions-changed'), instructions, version: integer }),
@@ -93,9 +99,11 @@ const event: z.ZodType<ExpeditionEvent> = z.discriminatedUnion('type', [
 ]);
 
 const results: z.ZodType<ExpeditionSnapshot> = z.strictObject({
+  inferenceLimits: inferenceLimitsSchema.optional(), acknowledgedAttemptIds: z.array(z.uuid()).max(20_000).optional(),
+  usagePause: usagePauseSchema.nullable().optional(),
   usage: inferenceUsageSchema.optional(),
   stormIntroduced: z.boolean(), stormAvailable: z.boolean(), controller, controllerHistory: history,
-  inferenceAttempts: integer.max(INFERENCE_LIMIT), inferenceLatencyMs: number, decisionFailure: failureSchema.nullable(),
+  inferenceAttempts: integer.max(Number.MAX_SAFE_INTEGER), inferenceLatencyMs: number, decisionFailure: failureSchema.nullable(),
   instructions, instructionsVersion: integer, decisionPending: z.literal(false), reconsiderationReason: z.null(), decisionRevision: integer,
   battery: number, batteryCapacity: number.positive(), energyUsed: number, objective, rubric,
   cargo: z.array(cargoSample).max(2), cargoCapacity: z.literal(2), deliveredSamples: z.array(deliveredSample).max(100),
@@ -107,7 +115,7 @@ const results: z.ZodType<ExpeditionSnapshot> = z.strictObject({
 });
 
 const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
-  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3)]), id: z.uuid(), completedAt: z.iso.datetime(),
+  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), id: z.uuid(), completedAt: z.iso.datetime(),
   startingConditions, events: z.array(event).min(1).max(100_000), decisions: z.array(decision).max(10_000), results,
 }).refine(record => {
   const { results: final, startingConditions: start, decisions, events } = record;
@@ -146,12 +154,22 @@ const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
           return true;
         });
     });
+}).refine(record => {
+  const newEvents = ['inference-limits-changed', 'usage-acknowledged', 'usage-paused', 'inference-continued'];
+  if (record.version < 4) return !record.startingConditions.inferenceLimits && !record.results.inferenceLimits
+    && record.results.acknowledgedAttemptIds === undefined && record.results.usagePause === undefined
+    && record.results.inferenceAttempts <= INFERENCE_LIMIT
+    && record.events.every(event => !newEvents.includes(event.type) && (event.type !== 'controller-changed' || !event.usagePause))
+    && record.decisions.every(decision => decision.failure !== 'usage-paused');
+  return !!record.startingConditions.inferenceLimits && !!record.results.inferenceLimits
+    && record.results.acknowledgedAttemptIds !== undefined && record.results.usagePause !== undefined
+    && record.decisions.every(decision => decision.inferenceAttempts <= 2);
 }).refine(hasConsistentHistory);
 
 export const MAX_RECORD_BYTES = 32 * 1024 * 1024;
 export function validateExpeditionRecord(value: unknown): ExpeditionRecord {
   const parsed = recordSchema.safeParse(value);
-  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, or 3 JSON export with valid history and results.');
+  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, or 4 JSON export with valid history and results.');
   return parsed.data;
 }
 export function importExpeditionRecord(json: string): ExpeditionRecord {

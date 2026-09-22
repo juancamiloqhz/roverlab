@@ -32,7 +32,7 @@ function accountingExtension(previous: ExpeditionRecord, next: ExpeditionRecord)
   const execution = (record: ExpeditionRecord) => ({ ...record, events: [],
     decisions: record.decisions.map(({ accounting: _accounting, ...decision }) => decision),
     results: { ...record.results, usage: undefined, decisionRevision: undefined } });
-  return previous.version === 3 && next.version === 3 && sameRecordData(execution(previous), execution(next))
+  return previous.version >= 3 && next.version === previous.version && sameRecordData(execution(previous), execution(next))
     && next.events.length > previous.events.length
     && sameRecordData(previous.events, next.events.slice(0, previous.events.length))
     && next.events.slice(previous.events.length).every(event => event.type === 'inference-accounted');

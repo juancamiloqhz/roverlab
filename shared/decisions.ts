@@ -46,7 +46,7 @@ export const controllerInputSchema: z.ZodType<ControllerInput> = z.strictObject(
   previousAction: recordedActionSchema.nullable(),
 }).refine(input => new Set(input.candidates.map(item => item.id)).size === input.candidates.length);
 
-export const failureSchema = z.enum(['configuration', 'unavailable', 'deadline', 'invalid-output', 'invalid-request', 'budget', 'cancelled']);
+export const failureSchema = z.enum(['configuration', 'unavailable', 'deadline', 'invalid-output', 'invalid-request', 'budget', 'cancelled', 'usage-paused']);
 export type DecisionFailure = z.infer<typeof failureSchema>;
 export const failureMessages: Record<DecisionFailure, string> = {
   configuration: 'TypeSafe is not configured or rejected the server credential. Configure the server key before retrying.',
@@ -55,6 +55,7 @@ export const failureMessages: Record<DecisionFailure, string> = {
   'invalid-output': 'TypeSafe returned an invalid decision. No action was executed.',
   'invalid-request': 'The decision request was invalid.',
   budget: 'The 100-submission inference budget is exhausted.',
+  'usage-paused': 'Inference paused by the expedition usage guards.',
   cancelled: 'The obsolete decision was cancelled.',
 };
 export const choiceSchema = z.strictObject({

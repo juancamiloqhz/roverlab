@@ -1,3 +1,4 @@
+import type { InferenceLimits, UsagePause } from '../../shared/limits';
 import type { AttemptEvidence, AttemptIdentity, DecisionAccounting, InferenceSubmission, InferenceUsage } from '../../shared/inference';
 import type { DecisionFailure, DecisionOutcome } from '../../shared/decisions';
 
@@ -96,11 +97,17 @@ export type PlaybackSpeed = 1 | 2 | 4;
 export type EndingCondition = 'timeout' | 'manual-stop' | 'stranded';
 export type ExpeditionCommand =
   | { type: 'start' | 'pause' | 'resume' | 'reset' | 'stop' | 'retry-decision' | 'continue-with-baseline' | 'introduce-storm' }
+  | { type: 'set-inference-limits'; limits: InferenceLimits }
+  | { type: 'acknowledge-usage'; attemptIds: string[] }
+  | { type: 'continue-inference' }
   | { type: 'set-instructions'; instructions: string }
   | { type: 'set-objective'; objective: ScientificObjective }
   | { type: 'set-controller'; controller: 'baseline' | 'typesafe' }
   | { type: 'set-speed'; speed: PlaybackSpeed };
 export type ExpeditionSnapshot = {
+  inferenceLimits?: InferenceLimits;
+  acknowledgedAttemptIds?: string[];
+  usagePause?: UsagePause | null;
   usage?: InferenceUsage;
   stormIntroduced: boolean;
   stormAvailable: boolean;
@@ -145,7 +152,11 @@ export type EventDetail =
   | { type: 'storm-expired'; stormId: string; detected: boolean }
   | { type: 'storm-effects-changed'; sensorRange: number; movementEnergyMultiplier: number }
   | { type: 'controller-selected'; controller: ExpeditionController['id'] }
-  | { type: 'controller-changed'; from: ExpeditionController['id']; to: ExpeditionController['id']; failure: DecisionFailure }
+  | { type: 'controller-changed'; from: ExpeditionController['id']; to: ExpeditionController['id']; failure?: DecisionFailure; usagePause?: UsagePause }
+  | { type: 'inference-limits-changed'; limits: InferenceLimits }
+  | { type: 'usage-acknowledged'; attemptIds: string[] }
+  | { type: 'usage-paused'; pause: UsagePause }
+  | { type: 'inference-continued' }
   | { type: 'inference-attempt'; decisionId: number; attempt: number; controller: ExpeditionController['id']; submission?: InferenceSubmission }
   | { type: 'inference-accounted'; evidence: AttemptEvidence }
   | { type: 'decision-settled'; decision: Decision }
@@ -167,13 +178,14 @@ export type EventDetail =
 export type ExpeditionEvent = EventDetail & { sequence: number; expedition: number; atMs: number };
 
 export type ExpeditionStartingConditions = {
+  inferenceLimits?: InferenceLimits;
   scenario: Scenario; objective: ScientificObjective; instructions: string; rubric: ScienceRubric;
   durationMs: number; fixedStepMs: number; travelTimeMs: Record<Terrain, number>;
   rechargePerSecond: number; batteryCapacity: number; initialBattery: number; movementEnergy: Record<Terrain, number>;
   waitMs: number; inspectMs: number; collectMs: number; cargoCapacity: number; controller: ExpeditionController['id'];
 };
 export type ExpeditionRecord = {
-  format: 'roverlab-expedition'; version: 1 | 2 | 3; id: string; completedAt: string;
+  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4; id: string; completedAt: string;
   startingConditions: ExpeditionStartingConditions;
   events: ExpeditionEvent[]; decisions: Decision[]; results: ExpeditionSnapshot;
 };
