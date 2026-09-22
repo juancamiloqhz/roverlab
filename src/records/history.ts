@@ -1,3 +1,4 @@
+import { missionInstructions, type MissionState } from '../../shared/mission';
 import { inferenceGuard, type UsagePause } from '../../shared/limits';
 import { canUpdateEvidence, sameAttempt } from '../../shared/inference';
 import type { Action, ControllerHistoryEntry, Decision, ExpeditionRecord } from '../simulation/types';
@@ -25,6 +26,9 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
   let objective = start.objective;
   let instructions = start.instructions;
   let instructionsVersion = 0;
+  const initialMission = start.mission ? { version: 0, preferences: start.mission } : undefined;
+  const mission: MissionState | undefined = initialMission ? { requested: initialMission, effective: initialMission,
+    history: [{ ...initialMission, requestedAtMs: 0, appliedAtMs: 0 }] } : undefined;
   let started = false;
   let ended = false;
   let attempts = 0;
@@ -75,9 +79,25 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
         if (started) return false;
         controller = event.controller;
         break;
-      case 'instructions-changed':
-        if (event.version !== ++instructionsVersion) return false;
-        instructions = event.instructions;
+      case 'mission-changed':
+      case 'instructions-changed': {
+        const revision = event.type === 'mission-changed' ? event.mission
+          : { version: event.version, preferences: { mode: 'free-text' as const, instructions: event.instructions } };
+        if (revision.version !== ++instructionsVersion || (event.type === 'mission-changed' && revision.preferences.mode !== 'preset')) return false;
+        if (pendingId !== null && decisions.get(pendingId)?.status !== 'discarded') return false;
+        instructions = missionInstructions(revision.preferences);
+        if (mission) {
+          if (sameRecordData(mission.requested.preferences, revision.preferences)) return false;
+          mission.requested = revision;
+          mission.history.push({ ...revision, requestedAtMs: event.atMs, appliedAtMs: null });
+        }
+        break;
+      }
+      case 'mission-applied':
+        if (!mission || activeAction || pendingId !== null || mission.requested.version !== event.version
+          || mission.effective.version === event.version) return false;
+        mission.effective = mission.requested;
+        mission.history.at(-1)!.appliedAtMs = event.atMs;
         break;
       case 'controller-changed': {
         const previous = decisions.get(decisions.size);
@@ -94,6 +114,8 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
         const decision = event.decision;
         if (!started || pendingId !== null || activeAction || selectedAction || decision.id !== decisions.size + 1
           || decision.status !== 'pending' || decision.inferenceAttempts !== 0 || decision.controller !== controller
+          || !sameRecordData(decision.input.mission, mission?.effective)
+          || (mission && mission.requested.version !== mission.effective.version)
           || decision.input.objective !== objective || decision.input.instructions !== instructions
           || decision.input.instructionsVersion !== instructionsVersion || decision.input.atMs !== event.atMs || (decision.accounting && decision.accounting.attempts.length !== 0)) return false;
         pendingId = decision.id;
@@ -174,5 +196,6 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
     && sameRecordData(usagePause, final.usagePause))) && ended && pendingId === null && (final.elapsedMs === 0 || decisions.size > 0)
     && sameRecordData([...decisions.values()], record.decisions) && sameRecordData(history, final.controllerHistory)
     && controller === final.controller && objective === final.objective && attempts === final.inferenceAttempts
+    && sameRecordData(mission, final.mission)
     && instructions === final.instructions && instructionsVersion === final.instructionsVersion;
 }

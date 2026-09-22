@@ -1,3 +1,4 @@
+import { MissionEvidence } from './MissionPreferences';
 import { DecisionUsage } from './InferenceUsage';
 import { Fragment, useState } from 'react';
 import { scientificObjectives } from '../simulation/science';
@@ -9,7 +10,7 @@ const seconds = (ms: number) => `${(ms / 1_000).toFixed(1)} s`;
 const actionName = (action: Action) => 'target' in action
   ? `${action.kind} · ${action.target.label} (${action.target.position.x}, ${action.target.position.z})${action.routeMode === 'avoid-storm' ? ' · Storm detour' : ''}`
   : `${action.kind} · ${seconds(action.durationMs)}`;
-const reasons = { start: 'Expedition started', 'action-completed': 'Action completed', 'instructions-changed': 'Instructions changed', 'new-observations': 'New observations', 'storm-detected': 'Dust storm detected', 'storm-expired': 'Known dust storm expired', retry: 'Retry requested by mission control', 'controller-changed': 'Controller changed by mission control' };
+const reasons = { 'mission-changed': 'Mission priorities changed', start: 'Expedition started', 'action-completed': 'Action completed', 'instructions-changed': 'Instructions changed', 'new-observations': 'New observations', 'storm-detected': 'Dust storm detected', 'storm-expired': 'Known dust storm expired', retry: 'Retry requested by mission control', 'controller-changed': 'Controller changed by mission control' };
 
 export function ObservationTable({ title, observations }: { title: string; observations: Observation[] }) {
   return <div className="decision-table"><table aria-label={title}>
@@ -37,7 +38,7 @@ function DecisionEntry({ decision }: { decision: Decision }) {
       <DecisionUsage decision={decision} />
       <p>Selected action: <strong>{decision.action ? actionName(decision.action) : 'None'}</strong></p>
       <p>{scientificObjectives[input.objective]} · Instructions version {input.instructionsVersion}</p>
-      <blockquote>{input.instructions || 'No mission instructions supplied.'}</blockquote>
+      {input.mission ? <MissionEvidence mission={input.mission} /> : <blockquote>{input.instructions || 'No mission instructions supplied.'}</blockquote>}
       <p>Battery {input.battery.toFixed(1)} / {input.batteryCapacity} · Energy used {input.energyUsed.toFixed(1)} · Cargo {input.cargo.length} / {input.cargoCapacity} · Remaining {seconds(input.remainingMs)}</p>
       <p>Cargo: {input.cargo.map(sample => sample.label).join(', ') || 'Empty'}. Position: {input.position.x}, {input.position.z} · Sensor range: {input.sensorRange} cells.</p>
       <p>Previous completed action: {input.previousAction ? actionName(input.previousAction) : 'None'}.</p>

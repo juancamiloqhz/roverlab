@@ -208,3 +208,11 @@ footer { display: flex; justify-content: space-between; gap: 20px; border-top: 1
 .inference-limits label { display: grid; gap: 6px; color: #9cafa3; font-size: 12px; }
 .inference-limits input { width: 100%; min-width: 0; padding: 9px; border: 1px solid #35414c; border-radius: 6px; background: #121a22; color: #e8eef3; }
 .recovery-panel li, .inference-limit-history { overflow-wrap: anywhere; }
+
+.instructions-block select { width: 100%; min-width: 0; margin: 8px 0 16px; padding: 10px; border: 1px solid #4b6151; border-radius: 5px; background: #192623; color: #e8eee9; font: inherit; }
+.instructions-block { overflow-wrap: anywhere; }
+.instructions-block blockquote { margin: 10px 0; white-space: pre-wrap; }
+.instructions-block summary { cursor: pointer; margin: 12px 0; }
+.instructions-block select:focus-visible, .instructions-block summary:focus-visible { outline: 2px solid #b8efc6; outline-offset: 3px; }
+.instructions-block ol { padding-left: 20px; }
+.instructions-block dd { margin-left: 16px; margin-bottom: 12px; }

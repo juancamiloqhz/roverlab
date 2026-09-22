@@ -1,3 +1,4 @@
+import { missionInstructions, missionPreset, type MissionPreferences } from '../../shared/mission';
 import { defaultInferenceLimits, inferenceGuard, inferenceLimitsSchema } from '../../shared/limits';
 import { canUpdateEvidence, sameAttempt, summarizeUsage, type AttemptEvidence } from '../../shared/inference';
 import { chooseBaselineAction } from '../controllers/baseline';
@@ -46,6 +47,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     .map(({ id, position, terrain, blocked }) => ({ id, position, terrain, blocked }));
   let objective = replay?.source.startingConditions.objective ?? options.objective ?? 'past-water';
   let instructions = replay?.source.startingConditions.instructions ?? '';
+  let mission: MissionPreferences = structuredClone(replay?.source.startingConditions.mission ?? { mode: 'free-text', instructions });
   const baseline: ExpeditionController = { id: 'baseline', decide: input => chooseBaselineAction(input).id };
   const recordedController = (id: ExpeditionController['id']): ExpeditionController => ({ id, decide() {
     throw new Error('Replay cannot request a live controller decision.');
@@ -58,6 +60,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   const usageListeners = new Set<() => void>();
   let inFlight: { decision: Decision; expedition: number; abort: AbortController } | null = null;
   const startingConditions: ExpeditionStartingConditions = {
+    ...(!replay || replay.source.version >= 5 ? { mission: structuredClone(mission) } : {}),
     ...(!replay || replay.source.version >= 4 ? { inferenceLimits: structuredClone(replay?.source.startingConditions.inferenceLimits ?? defaultInferenceLimits) } : {}),
     scenario, objective, instructions, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
     travelTimeMs: { plain: travelTimeMs('plain'), rough: travelTimeMs('rough') },
@@ -86,7 +89,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   let waypointStart = { ...scenario.base };
 
   function initialState(): ExpeditionSnapshot {
+    const initialMission = { version: 0, preferences: structuredClone(mission) };
     return {
+      ...(startingConditions.mission ? { mission: { requested: structuredClone(initialMission), effective: structuredClone(initialMission),
+        history: [{ ...structuredClone(initialMission), requestedAtMs: 0, appliedAtMs: 0 }] } } : {}),
       ...(startingConditions.inferenceLimits ? { inferenceLimits: structuredClone(startingConditions.inferenceLimits), acknowledgedAttemptIds: [], usagePause: null } : {}),
       ...(!replay || replay.source.version >= 2 ? { usage: summarizeUsage([]) } : {}),
       stormIntroduced: false, stormAvailable: !!scenario.dustStorm,
@@ -149,11 +155,42 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     selectAction();
   }
 
+  function applyMission() {
+    const current = state.mission;
+    if (!current || current.requested.version === current.effective.version || state.currentAction || inFlight?.expedition === expedition) return;
+    current.effective = structuredClone(current.requested);
+    current.history.at(-1)!.appliedAtMs = state.elapsedMs;
+    record({ type: 'mission-applied', version: current.effective.version });
+  }
+
+  function changeMission(preferences: MissionPreferences) {
+    if (state.status === 'ended' || (state.mission
+      ? sameRecordData(preferences, state.mission.requested.preferences)
+      : missionInstructions(preferences) === instructions)) return;
+    mission = structuredClone(preferences);
+    instructions = missionInstructions(mission);
+    state.instructions = instructions;
+    state.instructionsVersion++;
+    invalidateDecision();
+    state.reconsiderationReason = mission.mode === 'free-text' ? 'instructions-changed' : 'mission-changed';
+    if (state.mission) {
+      state.mission.requested = { version: state.instructionsVersion, preferences: structuredClone(mission) };
+      state.mission.history.push({ ...structuredClone(state.mission.requested), requestedAtMs: state.elapsedMs, appliedAtMs: null });
+    }
+    if (mission.mode === 'free-text') record({ type: 'instructions-changed', instructions, version: state.instructionsVersion });
+    else record({ type: 'mission-changed', mission: state.mission!.requested });
+    reconsiderAtWaypoint();
+    applyMission();
+    selectAction();
+  }
+
   function selectAction() {
     if (inFlight || state.status !== 'running' || state.currentAction || state.decisionFailure) return;
     if (checkUsageGuard()) return;
-    if (replay && replay.next?.type !== 'decision-requested') return;
+    if (replay && replay.next?.type !== 'decision-requested' && replay.next?.type !== 'mission-applied') return;
+    applyMission();
     const input: ControllerInput = structuredClone({
+      ...(state.mission ? { mission: state.mission.effective } : {}),
       instructions: state.instructions, instructionsVersion: state.instructionsVersion,
       battery: state.battery, batteryCapacity: state.batteryCapacity,
       energyUsed: state.energyUsed, remainingMs: state.remainingMs,
@@ -421,7 +458,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 4, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 5, id: expeditionId, completedAt: new Date().toISOString(),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();
@@ -578,15 +615,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         sense();
         reconsiderAtWaypoint();
         selectAction();
-      } else if (command.type === 'set-instructions' && state.status !== 'ended' && command.instructions !== instructions) {
-        instructions = command.instructions;
-        state.instructions = instructions;
-        state.instructionsVersion++;
-        invalidateDecision();
-        state.reconsiderationReason = 'instructions-changed';
-        record({ type: 'instructions-changed', instructions, version: state.instructionsVersion });
-        reconsiderAtWaypoint();
-        selectAction();
+      } else if (command.type === 'set-instructions') {
+        changeMission({ mode: 'free-text', instructions: command.instructions });
+      } else if (command.type === 'set-mission-preset' && state.mission) {
+        changeMission({ mode: 'preset', preset: missionPreset(command.preset) });
       } else if (command.type === 'set-controller' && state.status === 'ready') {
         const next = replay ? recordedController(command.controller) : command.controller === 'baseline' ? baseline : options.typesafeController;
         if (next && next.id !== controller.id) {
@@ -634,7 +666,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: actionController });
         expedition++;
         expeditionId = crypto.randomUUID();
-        runStartingConditions = { ...startingConditions, objective, instructions, controller: controller.id };
+        runStartingConditions = { ...startingConditions, ...(state.mission ? { mission: structuredClone(mission) } : {}), objective, instructions, controller: controller.id };
         decisions = [];
         storm = null;
         movementEnergyMultiplier = 1;
@@ -674,6 +706,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         case 'resumed': session.dispatch({ type: state.decisionFailure ? 'retry-decision' : 'resume' }); break;
         case 'speed-changed': session.dispatch({ type: 'set-speed', speed: event.speed }); break;
         case 'objective-selected': session.dispatch({ type: 'set-objective', objective: event.objective }); break;
+        case 'mission-changed':
+          if (event.mission.preferences.mode !== 'preset') throw new Error('Cannot replay this mission change.');
+          session.dispatch({ type: 'set-mission-preset', preset: event.mission.preferences.preset.id }); break;
+        case 'mission-applied': applyMission(); break;
         case 'instructions-changed': session.dispatch({ type: 'set-instructions', instructions: event.instructions }); break;
         case 'storm-introduced': session.dispatch({ type: 'introduce-storm' }); break;
         case 'controller-selected':
@@ -704,7 +740,9 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
           // recording the command itself. Re-execute that command as one unit.
           const commandEvent = replay.afterNext;
           if (commandEvent?.type === 'instructions-changed') session.dispatch({ type: 'set-instructions', instructions: commandEvent.instructions });
-          else session.dispatch({ type: 'stop' });
+          else if (commandEvent?.type === 'mission-changed' && commandEvent.mission.preferences.mode === 'preset') {
+            session.dispatch({ type: 'set-mission-preset', preset: commandEvent.mission.preferences.preset.id });
+          } else session.dispatch({ type: 'stop' });
           break;
         }
         case 'action-cancelled':

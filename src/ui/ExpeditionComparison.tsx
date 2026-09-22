@@ -1,3 +1,4 @@
+import { MissionPreferences } from './MissionPreferences';
 import { formatInferenceCost } from './InferenceUsage';
 import type { ReactNode } from 'react';
 import type { ExpeditionRecord, ExpeditionStartingConditions } from '../simulation/types';
@@ -7,7 +8,7 @@ import { controllerLabels } from './controllerLabels';
 import { formatTime } from './formatTime';
 
 function simulationSettings(start: ExpeditionStartingConditions) {
-  const { scenario, objective, rubric, instructions, controller, ...settings } = start;
+  const { scenario, objective, rubric, instructions, mission, controller, ...settings } = start;
   return settings;
 }
 
@@ -115,7 +116,9 @@ export function ExpeditionComparison({ records, onClose, onOpen }: {
       { label: 'Environmental interventions', matches: interventionsMatch, render: record => <EnvironmentalInterventions record={record} /> },
     ]} />
     <p>{instructionsMatch ? 'Mission instruction histories match.' : 'Mission instruction histories differ.'} Instructions and controllers are comparison variables.</p>
+    <p>{sameRecordData(left.results.mission?.history ?? instructionHistory(left), right.results.mission?.history ?? instructionHistory(right)) ? 'Mission preference histories match.' : 'Mission preference histories differ.'}</p>
     <ComparisonTable title="Instructions and controllers" records={records} rows={[
+      { label: 'Mission mode and preferences', render: record => <MissionPreferences snapshot={record.results} /> },
       { label: 'Mission instructions', render: record => <ol className="instruction-history">{instructionHistory(record).map((entry, index) => <li key={index}>
         <strong>{entry.when} · {formatTime(entry.atMs)} ({entry.atMs} ms)</strong><p>{entry.instructions || 'None supplied.'}</p>
       </li>)}</ol> },

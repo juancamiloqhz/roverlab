@@ -1,10 +1,12 @@
+import { MAX_MISSION_INSTRUCTIONS_LENGTH, missionInstructions, missionRevisionSchema } from './mission';
 import { z } from 'zod';
 import { attemptEvidenceSchema, attemptIdentitySchema } from './inference';
 import type { ControllerInput } from '../src/simulation/types';
 
+export { MAX_MISSION_INSTRUCTIONS_LENGTH } from './mission';
+
 export const DECISION_DEADLINE_MS = 5_000;
 export const INFERENCE_LIMIT = 100;
-export const MAX_MISSION_INSTRUCTIONS_LENGTH = 20_000;
 const number = z.number().finite().nonnegative();
 const text = z.string().max(20_000);
 const identity = z.string().min(1).max(200);
@@ -38,13 +40,15 @@ const candidate = z.discriminatedUnion('kind', [
 ]);
 export const recordedActionSchema = z.union([action, candidate]);
 export const controllerInputSchema: z.ZodType<ControllerInput> = z.strictObject({
+  mission: missionRevisionSchema.optional(),
   remainingMs: number, energyUsed: number, instructions: z.string().max(MAX_MISSION_INSTRUCTIONS_LENGTH), instructionsVersion: number.int(),
   battery: number, batteryCapacity: number.positive(), objective: z.enum(['past-water', 'unusual-minerals']),
   cargo: z.array(z.strictObject({ sampleId: identity, label: text })).max(2), cargoCapacity: number.int().positive(),
   atMs: number, position, sensorRange: number, observations: z.array(observationSchema).max(10_000),
   memory: z.array(observationSchema).max(10_000), candidates: z.array(candidate).min(1).max(10_000),
   previousAction: recordedActionSchema.nullable(),
-}).refine(input => new Set(input.candidates.map(item => item.id)).size === input.candidates.length);
+}).refine(input => !input.mission || (input.instructions === missionInstructions(input.mission.preferences)
+  && input.instructionsVersion === input.mission.version)).refine(input => new Set(input.candidates.map(item => item.id)).size === input.candidates.length);
 
 export const failureSchema = z.enum(['configuration', 'unavailable', 'deadline', 'invalid-output', 'invalid-request', 'budget', 'cancelled', 'usage-paused']);
 export type DecisionFailure = z.infer<typeof failureSchema>;

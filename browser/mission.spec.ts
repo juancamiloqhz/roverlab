@@ -1,0 +1,50 @@
+import { expect, test } from '@playwright/test';
+
+test('mission control selects modes, changes priorities and inspects saved and replayed history', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  const mode = page.getByRole('combobox', { name: 'Mission mode', exact: true });
+  await mode.selectOption('preset');
+  const preset = page.getByRole('combobox', { name: 'Mission priority preset' });
+  await expect(preset).toHaveValue('balanced');
+  await expect(page.getByRole('textbox', { name: 'Mission instructions' })).toHaveCount(0);
+  await preset.selectOption('conserve-energy');
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  await page.clock.runFor(1_000);
+  await preset.selectOption('explore-more');
+  const history = page.getByRole('region', { name: 'Mission preferences' });
+  await expect(history).toContainText('Requested version 3');
+  await history.getByText('Mission preference history', { exact: true }).click();
+  await expect(history).toContainText('Waiting for a safe action boundary');
+  await page.clock.runFor(3_100);
+  await expect(history).toContainText('Applied at 4000 ms');
+  const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await timeline.getByText(/Decision 1 ·/).click();
+  await expect(timeline.getByLabel('Decision 1 details')).toContainText('Conserve energy');
+  await expect(timeline.getByLabel('Decision 1 details')).toContainText('Return reserve: 20 energy units');
+  await mode.selectOption('free-text');
+  await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Inspect the nearest evidence.');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await expect(history).toContainText('Free-text experiment');
+  await expect(history).toContainText('The baseline cannot interpret arbitrary free text');
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await page.getByRole('button', { name: /^Open expedition / }).first().click();
+  const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
+  await saved.getByText('Mission preference history', { exact: true }).click();
+  await expect(saved).toContainText('Explore more');
+  await expect(saved).toContainText('Not applied before expedition ended');
+  await page.route('**/api/**', route => route.abort());
+  await saved.getByRole('button', { name: 'Replay expedition' }).click();
+  await expect(page.getByRole('region', { name: 'Expedition replay', exact: true })).toContainText('Mission preferences');
+});
+
+test('mission controls and history fit a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Mission mode', exact: true }).selectOption('preset');
+  await page.getByRole('combobox', { name: 'Mission priority preset' }).selectOption('explore-more');
+  await page.getByText('Preset settings and adherence definitions').first().click();
+  await expect(page.getByRole('region', { name: 'Mission preferences' })).toContainText('new terrain cells per simulated minute');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/mission-narrow.png', fullPage: true });
+});

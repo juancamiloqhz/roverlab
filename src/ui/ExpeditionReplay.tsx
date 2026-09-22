@@ -1,3 +1,4 @@
+import { MissionPreferences } from './MissionPreferences';
 import { InferenceAllowances } from './InferenceLimits';
 import { UsageSummary } from './InferenceUsage';
 import { useState } from 'react';
@@ -43,7 +44,7 @@ export function ExpeditionReplay({ session }: { session: ExpeditionSession }) {
         <div className="telemetry-row"><span>Science score</span><strong aria-label="Replay science score">{snapshot.scienceScore}</strong></div>
         <div className="telemetry-row"><span>Discoveries / inspections</span><strong>{snapshot.discoveryCount} / {snapshot.inspectionCount}</strong></div>
         <div className="action-block"><span className="field-label">RECORDED ACTION</span><strong>{action ? `${action.kind.replaceAll('-', ' ')}${'target' in action ? ` · ${action.target.label}` : ''}` : 'None'}</strong></div>
-        <p className="replay-note">Mission instructions · Version {snapshot.instructionsVersion}<br />{snapshot.instructions || 'None supplied.'}</p>
+        <MissionPreferences snapshot={snapshot} />
       </aside>
     </div>
     <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} />

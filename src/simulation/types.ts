@@ -1,3 +1,4 @@
+import type { MissionPreferences, MissionRevision, MissionState, MissionPresetId } from '../../shared/mission';
 import type { InferenceLimits, UsagePause } from '../../shared/limits';
 import type { AttemptEvidence, AttemptIdentity, DecisionAccounting, InferenceSubmission, InferenceUsage } from '../../shared/inference';
 import type { DecisionFailure, DecisionOutcome } from '../../shared/decisions';
@@ -61,7 +62,7 @@ export type ExpeditionController = {
   decide(input: ControllerInput, context: { signal: AbortSignal; reserveAttempt(retryIndex?: 0 | 1): AttemptIdentity | null; reportAttempt(evidence: AttemptEvidence): void }): string | Promise<string | DecisionOutcome>;
 };
 export type ControllerHistoryEntry = { controller: ExpeditionController['id']; atMs: number; firstDecisionId: number };
-export type DecisionReason = 'start' | 'action-completed' | 'instructions-changed' | 'new-observations' | 'storm-detected' | 'storm-expired' | 'retry' | 'controller-changed';
+export type DecisionReason = 'start' | 'action-completed' | 'instructions-changed' | 'new-observations' | 'storm-detected' | 'storm-expired' | 'retry' | 'controller-changed' | 'mission-changed';
 export type Decision = {
   accounting?: DecisionAccounting;
   reason: DecisionReason;
@@ -76,6 +77,7 @@ export type Decision = {
   failure?: DecisionFailure;
 };
 export type ControllerInput = {
+  mission?: MissionRevision;
   remainingMs: number;
   energyUsed: number;
   instructions: string;
@@ -100,11 +102,13 @@ export type ExpeditionCommand =
   | { type: 'set-inference-limits'; limits: InferenceLimits }
   | { type: 'acknowledge-usage'; attemptIds: string[] }
   | { type: 'continue-inference' }
+  | { type: 'set-mission-preset'; preset: MissionPresetId }
   | { type: 'set-instructions'; instructions: string }
   | { type: 'set-objective'; objective: ScientificObjective }
   | { type: 'set-controller'; controller: 'baseline' | 'typesafe' }
   | { type: 'set-speed'; speed: PlaybackSpeed };
 export type ExpeditionSnapshot = {
+  mission?: MissionState;
   inferenceLimits?: InferenceLimits;
   acknowledgedAttemptIds?: string[];
   usagePause?: UsagePause | null;
@@ -147,6 +151,8 @@ export type ExpeditionSnapshot = {
   memory: Observation[];
 };
 export type EventDetail =
+  | { type: 'mission-changed'; mission: MissionRevision }
+  | { type: 'mission-applied'; version: number }
   | { type: 'storm-introduced'; storm: DustStorm }
   | { type: 'storm-detected'; storm: StormObservation }
   | { type: 'storm-expired'; stormId: string; detected: boolean }
@@ -178,6 +184,7 @@ export type EventDetail =
 export type ExpeditionEvent = EventDetail & { sequence: number; expedition: number; atMs: number };
 
 export type ExpeditionStartingConditions = {
+  mission?: MissionPreferences;
   inferenceLimits?: InferenceLimits;
   scenario: Scenario; objective: ScientificObjective; instructions: string; rubric: ScienceRubric;
   durationMs: number; fixedStepMs: number; travelTimeMs: Record<Terrain, number>;
@@ -185,7 +192,7 @@ export type ExpeditionStartingConditions = {
   waitMs: number; inspectMs: number; collectMs: number; cargoCapacity: number; controller: ExpeditionController['id'];
 };
 export type ExpeditionRecord = {
-  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4; id: string; completedAt: string;
+  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5; id: string; completedAt: string;
   startingConditions: ExpeditionStartingConditions;
   events: ExpeditionEvent[]; decisions: Decision[]; results: ExpeditionSnapshot;
 };
