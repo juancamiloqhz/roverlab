@@ -78,6 +78,7 @@ function SimulationSettings({ record }: { record: ExpeditionRecord }) {
   const start = record.startingConditions;
   return <><p>{formatTime(start.durationMs)} budget · {start.cargoCapacity} cargo slots · {start.initialBattery} / {start.batteryCapacity} initial battery</p>
     <details><summary>Timing and energy rates</summary>
+      <p>Simulation version: {start.simulationVersion ?? 'Legacy grid rules'}.</p>
       <p>Travel: {start.travelTimeMs.plain / 1_000}s plain / {start.travelTimeMs.rough / 1_000}s rough per cell.</p>
       <p>Movement energy: {start.movementEnergy.plain} plain / {start.movementEnergy.rough} rough per cell.</p>
       <p>Inspect {start.inspectMs / 1_000}s · Collect {start.collectMs / 1_000}s · Wait {start.waitMs / 1_000}s.</p>

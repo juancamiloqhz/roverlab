@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import { createExpedition } from '../src/simulation/expedition';
-import { authoredScenario } from '../src/simulation/scenario';
+import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
+import { firstPlayableScenario as authoredScenario } from './fixtures/first-playable-scenario';
 import type { Scenario } from '../src/simulation/types';
 import { greedySurvey } from './fixtures/greedy-survey';
 

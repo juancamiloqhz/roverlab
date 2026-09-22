@@ -30,11 +30,15 @@ const history = z.array(z.strictObject({ controller, atMs: number, firstDecision
 const observations = z.array(observationSchema).max(10_000);
 
 const startingConditions: z.ZodType<ExpeditionStartingConditions> = z.strictObject({
+  simulationVersion: z.literal('grid-expedition-v1').optional(),
   decisionCadence: z.literal('meaningful-boundaries-v1').optional(),
   mission: missionPreferencesSchema.optional(),
   inferenceLimits: inferenceLimitsSchema.optional(),
   scenario: z.strictObject({
     id: identity, name: text, width: integer.positive().max(100), depth: integer.positive().max(100), base: position, sensorRange: number,
+    regions: z.array(z.strictObject({ name: identity, min: position, max: position })).max(100).optional(),
+    durationMs: integer.positive().max(1_200_000).multipleOf(100).optional(),
+    batteryCapacity: number.positive().max(1_000).optional(),
     dustStorm: z.strictObject({ ...stormFields, durationMs: number.positive() }).optional(),
     obstacles: z.array(position).max(10_000), roughTerrain: z.array(position).max(10_000),
     samples: z.array(z.strictObject({ id: identity, label: text, position, properties: z.array(text).max(100),
@@ -42,7 +46,13 @@ const startingConditions: z.ZodType<ExpeditionStartingConditions> = z.strictObje
     })).max(100),
   }).refine(scenario => {
     const cells = [scenario.base, ...scenario.obstacles, ...scenario.roughTerrain, ...scenario.samples.map(sample => sample.position)];
-    return cells.every(cell => Number.isInteger(cell.x) && Number.isInteger(cell.z) && cell.x < scenario.width && cell.z < scenario.depth)
+    const regions = scenario.regions ?? [];
+    return regions.every(region => Number.isInteger(region.min.x) && Number.isInteger(region.min.z)
+      && Number.isInteger(region.max.x) && Number.isInteger(region.max.z)
+      && region.min.x <= region.max.x && region.min.z <= region.max.z
+      && region.max.x < scenario.width && region.max.z < scenario.depth)
+      && new Set(regions.map(region => region.name)).size === regions.length
+      && cells.every(cell => Number.isInteger(cell.x) && Number.isInteger(cell.z) && cell.x < scenario.width && cell.z < scenario.depth)
       && new Set(scenario.samples.map(sample => sample.id)).size === scenario.samples.length;
   }),
   objective, instructions, rubric, durationMs: number.positive(), fixedStepMs: number.positive(),
@@ -125,7 +135,7 @@ const results: z.ZodType<ExpeditionSnapshot> = z.strictObject({
 });
 
 const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
-  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]), id: z.uuid(), completedAt: z.iso.datetime(),
+  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8)]), id: z.uuid(), completedAt: z.iso.datetime(),
   startingConditions, events: z.array(event).min(1).max(100_000), decisions: z.array(decision).max(10_000), results,
 }).refine(record => {
   const { results: final, startingConditions: start, decisions, events } = record;
@@ -195,12 +205,14 @@ const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
       : event.type === 'decision-made' ? [event.input] : [])];
   return (record.version >= 7) === !!record.startingConditions.decisionCadence
     && inputs.every(input => (record.version >= 7) === !!input.decisionBoundary);
-}).refine(hasConsistentHistory);
+}).refine(record => (record.version >= 8) === !!record.startingConditions.simulationVersion
+  && (record.version >= 8 || (record.startingConditions.scenario.durationMs === undefined
+    && record.startingConditions.scenario.batteryCapacity === undefined && record.startingConditions.scenario.regions === undefined))).refine(hasConsistentHistory);
 
 export const MAX_RECORD_BYTES = 32 * 1024 * 1024;
 export function validateExpeditionRecord(value: unknown): ExpeditionRecord {
   const parsed = recordSchema.safeParse(value);
-  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, 4, 5, 6, or 7 JSON export with valid history and results.');
+  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, 4, 5, 6, 7, or 8 JSON export with valid history and results.');
   return parsed.data;
 }
 export function importExpeditionRecord(json: string): ExpeditionRecord {

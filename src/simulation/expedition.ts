@@ -14,7 +14,6 @@ import { sameRecordData } from '../records/history';
 import type { Action, ActionCandidate, ControllerInput, Decision, DustStorm, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, ExpeditionRecord, ExpeditionStartingConditions, FullWorldView, PlaybackSpeed, Position, Scenario, ScientificObjective } from './types';
 
 const STEP_MS = 100;
-const DURATION_MS = 300_000;
 const WAIT_MS = 5_000;
 const INSPECT_MS = 6_000;
 const COLLECT_MS = 4_000;
@@ -43,10 +42,13 @@ class ReplayHistory {
 function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   const meaningfulBoundaries = !replay || replay.source.version >= 7;
   const scenario = structuredClone(replay?.source.startingConditions.scenario ?? options.scenario ?? authoredScenario);
+  const versionedSettings = !replay || replay.source.version >= 8;
+  const durationMs = versionedSettings ? scenario.durationMs ?? 300_000 : 300_000;
+  const batteryCapacity = versionedSettings ? scenario.batteryCapacity ?? 100 : 100;
   // Reuse the world's terrain projection without installing it in rover knowledge.
   const fullTerrain = observe(scenario, scenario.base, 0, Infinity)
     .filter(item => item.kind === 'terrain')
-    .map(({ id, position, terrain, blocked }) => ({ id, position, terrain, blocked }));
+    .map(({ id, position, terrain, blocked, region }) => ({ id, position, terrain, blocked, ...(region ? { region } : {}) }));
   let objective = replay?.source.startingConditions.objective ?? options.objective ?? 'past-water';
   let instructions = replay?.source.startingConditions.instructions ?? '';
   let mission: MissionPreferences = structuredClone(replay?.source.startingConditions.mission ?? { mode: 'free-text', instructions });
@@ -65,12 +67,13 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   const usageListeners = new Set<() => void>();
   let inFlight: { decision: Decision; expedition: number; abort: AbortController } | null = null;
   const startingConditions: ExpeditionStartingConditions = {
+    ...(versionedSettings ? { simulationVersion: 'grid-expedition-v1' as const } : {}),
     ...(meaningfulBoundaries ? { decisionCadence: DECISION_CADENCE } : {}),
     ...(!replay || replay.source.version >= 5 ? { mission: structuredClone(mission) } : {}),
     ...(!replay || replay.source.version >= 4 ? { inferenceLimits: structuredClone(replay?.source.startingConditions.inferenceLimits ?? defaultInferenceLimits) } : {}),
-    scenario, objective, instructions, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
+    scenario, objective, instructions, rubric: structuredClone(scienceRubric), durationMs, fixedStepMs: STEP_MS,
     travelTimeMs: { plain: travelTimeMs('plain'), rough: travelTimeMs('rough') },
-    rechargePerSecond: RECHARGE_PER_SECOND, batteryCapacity: 100, initialBattery: 100, movementEnergy: { plain: movementEnergy('plain'), rough: movementEnergy('rough') },
+    rechargePerSecond: RECHARGE_PER_SECOND, batteryCapacity, initialBattery: batteryCapacity, movementEnergy: { plain: movementEnergy('plain'), rough: movementEnergy('rough') },
     waitMs: WAIT_MS, inspectMs: INSPECT_MS, collectMs: COLLECT_MS, cargoCapacity: 2, controller: controller.id,
   };
   if (replay && !sameRecordData(startingConditions, replay.source.startingConditions)) {
@@ -107,10 +110,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       controller: controller.id, inferenceAttempts: 0, inferenceLatencyMs: 0, decisionFailure: null,
       controllerHistory: [{ controller: controller.id, atMs: 0, firstDecisionId: 1 }],
       instructions, instructionsVersion: 0, decisionRevision: 0, reconsiderationReason: null, decisionPending: inFlight !== null,
-      battery: 100, batteryCapacity: 100, energyUsed: 0,
+      battery: batteryCapacity, batteryCapacity, energyUsed: 0,
       objective, rubric: structuredClone(scienceRubric), cargo: [], cargoCapacity: 2,
       deliveredSamples: [], scienceScore: 0, discoveryCount: 0, inspectionCount: 0,
-      status: 'ready', durationMs: DURATION_MS, elapsedMs: 0, remainingMs: DURATION_MS, speed: 1,
+      status: 'ready', durationMs, elapsedMs: 0, remainingMs: durationMs, speed: 1,
       rover: { position: { ...scenario.base }, heading: 0, distance: 0 },
       currentAction: null, endingCondition: null, exploredTargetIds: [],
       area: { id: scenario.id, name: scenario.name, width: scenario.width, depth: scenario.depth },
@@ -505,7 +508,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 7, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 8, id: expeditionId, completedAt: new Date().toISOString(),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();
@@ -524,7 +527,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
 
   function tick() {
     state.elapsedMs += STEP_MS;
-    state.remainingMs = DURATION_MS - state.elapsedMs;
+    state.remainingMs = durationMs - state.elapsedMs;
     const action = state.currentAction!;
     actionProgressMs += STEP_MS;
     let completed = false;

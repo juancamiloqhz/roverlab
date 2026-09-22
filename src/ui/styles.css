@@ -216,3 +216,10 @@ footer { display: flex; justify-content: space-between; gap: 20px; border-top: 1
 .instructions-block select:focus-visible, .instructions-block summary:focus-visible { outline: 2px solid #b8efc6; outline-offset: 3px; }
 .instructions-block ol { padding-left: 20px; }
 .instructions-block dd { margin-left: 16px; margin-bottom: 12px; }
+
+.region-label { background: #f4e6ccd9; color: #333e39; font-size: 10px; letter-spacing: .5px; border: 1px solid #716851; }
+
+.debug-knowledge { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.base-label { transform: translateX(-35%); }
+.rover-label { transform: translateX(25%); }
+@media (max-width: 500px) { .scene { height: 460px; } .region-label { font-size: 8px; } }

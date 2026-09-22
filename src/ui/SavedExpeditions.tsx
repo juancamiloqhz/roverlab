@@ -138,6 +138,7 @@ export function SavedExpeditionView({ record, onClose }: { record: ExpeditionRec
   return <section className="saved-expedition" aria-label="Saved expedition">
     <p className="eyebrow">SAVED EXPEDITION · READ ONLY</p>
     <h2>{record.results.area.name}</h2>
+    <p>Scenario {record.startingConditions.scenario.id} · Simulation {record.startingConditions.simulationVersion ?? 'Legacy grid rules'} · {record.startingConditions.durationMs / 60_000}-minute budget</p>
     <p>Completed {new Date(record.completedAt).toLocaleString()}. Inspecting this history requires no API key.</p>
     <div className="record-toolbar">
       <button className="secondary" onClick={onClose}>Return to live expedition</button>

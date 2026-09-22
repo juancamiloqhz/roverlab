@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { runPlaytest, runStormRoutePlaytest } from '../scripts/playtest-tuning';
 import { createReplay } from '../src/simulation/expedition';
-import { authoredScenario } from '../src/simulation/scenario';
+import { firstPlayableScenario as authoredScenario } from './fixtures/first-playable-scenario';
 import { exportExpeditionRecord, importExpeditionRecord } from '../src/records/contract';
 
 test('a deliberate survey can wait for a storm and inspect all samples but miss delivery with the boundary cadence', () => {

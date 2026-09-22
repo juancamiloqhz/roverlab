@@ -1,5 +1,5 @@
 import { createExpedition } from '../src/simulation/expedition';
-import { authoredScenario } from '../src/simulation/scenario';
+import { firstPlayableScenario as authoredScenario } from '../tests/fixtures/first-playable-scenario';
 import type { ActionCandidate, ControllerInput, ExpeditionRecord, Scenario, ScientificObjective } from '../src/simulation/types';
 
 type Strategy = 'baseline' | 'survey' | 'no-recharge' | 'wait-for-storm' | 'detour';

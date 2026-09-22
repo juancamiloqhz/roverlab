@@ -15,6 +15,8 @@ const appEntry = `
 `;
 
 test('observation controls reveal only the debug scene and preserve controller inputs and a complete expedition', async ({ page }) => {
+  // Compare two complete eighteen-minute histories alongside the WebGL controls.
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
@@ -37,7 +39,7 @@ test('observation controls reveal only the debug scene and preserve controller i
   await expect(scene.getByText('Full-world view · DEBUG', { exact: true })).toBeVisible();
   for (const label of ['A', 'B', 'C']) await expect(scene.getByText(`Sample ${label} · Hidden from rover`, { exact: true })).toBeVisible();
   await expect(page.getByLabel('Samples discovered')).toHaveText('0');
-  await expect(page.getByLabel('Terrain discovered')).toHaveText('29 / 399 cells');
+  await expect(page.getByLabel('Terrain discovered')).toHaveText('29 / 1596 cells');
   await page.getByRole('button', { name: 'Introduce dust storm' }).click();
   await page.evaluate(() => (window as unknown as SessionWindow).reference.dispatch({ type: 'introduce-storm' }));
   await page.clock.runFor(100);
@@ -58,7 +60,7 @@ test('observation controls reveal only the debug scene and preserve controller i
   await page.evaluate(() => (window as unknown as SessionWindow).reference.dispatch({ type: 'start' }));
   await page.clock.runFor(1_000);
   await page.evaluate(() => (window as unknown as SessionWindow).reference.advanceWallTime(1_000));
-  await expect(page.getByLabel('Rover coordinates')).not.toHaveText('3.00 / 13.00');
+  await expect(page.getByLabel('Rover coordinates')).not.toHaveText('16.00 / 24.00');
   await orbit.click();
   await follow.click();
   await page.getByRole('button', { name: 'Pause expedition' }).click();
@@ -85,8 +87,8 @@ test('observation controls reveal only the debug scene and preserve controller i
   await expect(scene.getByText(/Sample A/)).toHaveCount(0);
   await debug.uncheck();
   await orbit.click();
-  await page.clock.fastForward(273_000);
-  await page.evaluate(() => (window as unknown as SessionWindow).reference.advanceWallTime(273_000));
+  await page.clock.fastForward(1_053_000);
+  await page.evaluate(() => (window as unknown as SessionWindow).reference.advanceWallTime(1_053_000));
   await expect(page.getByRole('heading', { name: 'Time budget reached' })).toBeVisible();
   const comparison = await page.evaluate(() => {
     const { expedition, reference } = window as unknown as SessionWindow;
@@ -145,7 +147,7 @@ test('follow keeps the moving rover in view, supports paused inspection, and res
   const followed = (await roverLabel.boundingBox())!;
   expect(Math.abs(followed.x - initial.x)).toBeLessThan(2);
   expect(Math.abs(followed.y - initial.y)).toBeLessThan(2);
-  await expect(page.getByLabel('Rover coordinates')).toHaveText('5.50 / 13.00');
+  await expect(page.getByLabel('Rover coordinates')).toHaveText('18.50 / 24.00');
   const paused = await canvas.screenshot({ path: 'test-results/rover-moving-02.png' });
   await page.clock.runFor(1_000);
   expect((await canvas.screenshot()).equals(paused)).toBe(true);
@@ -158,12 +160,12 @@ test('follow keeps the moving rover in view, supports paused inspection, and res
   await page.mouse.wheel(0, -250);
   await page.clock.runFor(100);
   await expect(roverLabel).toBeVisible();
-  await expect(page.getByLabel('Rover coordinates')).toHaveText('5.50 / 13.00');
+  await expect(page.getByLabel('Rover coordinates')).toHaveText('18.50 / 24.00');
   await page.getByRole('button', { name: 'Reset expedition' }).click();
   await page.clock.runFor(100);
   await expect(follow).toHaveAttribute('aria-pressed', 'true');
   await expect(roverLabel).toBeVisible();
-  await expect(page.getByLabel('Rover coordinates')).toHaveText('3.00 / 13.00');
+  await expect(page.getByLabel('Rover coordinates')).toHaveText('16.00 / 24.00');
 });
 
 test('sensor coverage follows storm range changes and observation controls stay responsive during a pending decision', async ({ page }) => {

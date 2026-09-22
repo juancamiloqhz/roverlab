@@ -8,11 +8,13 @@ export function observe(scenario: Scenario, position: Position, atMs: number, se
   const blocked = new Set(scenario.obstacles.map(positionKey));
   const rough = new Set(scenario.roughTerrain.map(positionKey));
   const observations: Observation[] = [];
-  for (let z = 0; z < scenario.depth; z++) {
-    for (let x = 0; x < scenario.width; x++) {
+  for (let z = Math.max(0, Math.ceil(position.z - sensorRange)); z <= Math.min(scenario.depth - 1, Math.floor(position.z + sensorRange)); z++) {
+    for (let x = Math.max(0, Math.ceil(position.x - sensorRange)); x <= Math.min(scenario.width - 1, Math.floor(position.x + sensorRange)); x++) {
       if (!inRange({ x, z })) continue;
       const key = positionKey({ x, z });
+      const region = scenario.regions?.find(region => x >= region.min.x && x <= region.max.x && z >= region.min.z && z <= region.max.z);
       observations.push({
+        ...(region ? { region: region.name } : {}),
         kind: 'terrain', id: `cell:${key}`, position: { x, z }, observedAtMs: atMs,
         terrain: rough.has(key) ? 'rough' : 'plain', blocked: blocked.has(key),
       });

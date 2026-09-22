@@ -14,7 +14,7 @@ const identity = z.string().min(1).max(200);
 const position = z.strictObject({ x: number, z: number });
 const observed = { id: identity, position, observedAtMs: number };
 export const observationSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ ...observed, kind: z.literal('terrain'), terrain: z.enum(['plain', 'rough']), blocked: z.boolean() }),
+  z.strictObject({ ...observed, kind: z.literal('terrain'), region: text.optional(), terrain: z.enum(['plain', 'rough']), blocked: z.boolean() }),
   z.strictObject({ ...observed, kind: z.literal('base') }),
   z.strictObject({ ...observed, kind: z.literal('dust-storm'), radius: number.positive(), expiresAtMs: number,
     remainingMs: number, sensorRange: number, movementEnergyMultiplier: number.min(1) }),

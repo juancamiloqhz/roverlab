@@ -11,7 +11,7 @@ test('completed records persist across reload, selection and JSON exchange witho
   await page.getByRole('button', { name: 'Introduce dust storm' }).click();
   await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Avoid costly crossings.');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
-  await page.clock.fastForward(210_000);
+  await page.clock.fastForward(990_000);
   const results = await page.getByRole('region', { name: 'Expedition results', exact: true }).textContent();
   const library = page.getByRole('region', { name: 'Saved expeditions', exact: true });
   await expect(library.getByRole('button', { name: /Open expedition/ })).toHaveCount(1);
@@ -37,7 +37,7 @@ test('completed records persist across reload, selection and JSON exchange witho
   await page.clock.fastForward(60_000);
   await page.getByRole('button', { name: 'Return to live expedition' }).click();
   await expect(page.getByRole('button', { name: 'Resume expedition' })).toBeVisible();
-  await expect(page.getByLabel('Remaining expedition time')).toHaveText('04:59');
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('17:59');
   await page.getByRole('button', { name: 'Stop expedition' }).click();
   await expect(library.getByRole('button', { name: /Open expedition/ })).toHaveCount(2);
   await library.getByRole('button', { name: /Open expedition/ }).last().click();

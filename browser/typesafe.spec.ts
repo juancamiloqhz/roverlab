@@ -23,8 +23,8 @@ test('TypeSafe pending decisions keep the camera and controls responsive and sho
   expect(await scene.screenshot()).not.toEqual(before);
   await page.getByRole('button', { name: '4×', exact: true }).click();
   await page.getByRole('button', { name: 'Pause expedition' }).click();
-  await expect(page.getByLabel('Remaining expedition time')).toHaveText('05:00');
-  await expect(page.getByLabel('Battery charge', { exact: true })).toHaveText('100.0 / 100');
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('18:00');
+  await expect(page.getByLabel('Battery charge', { exact: true })).toHaveText('160.0 / 160');
   await request.post('http://127.0.0.1:4174/release');
   await expect(page.getByLabel('Current action')).toContainText('Wait');
   const timeline = page.getByRole('region', { name: 'Decision timeline' });
@@ -69,7 +69,7 @@ test('mission control retries failures, then explicitly continues with baseline 
   await expect(recovery.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
   await expect(recovery.getByRole('button', { name: 'Continue with the baseline controller' })).toBeEnabled();
   await page.clock.runFor(10_000);
-  await expect(page.getByLabel('Remaining expedition time')).toHaveText('05:00');
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('18:00');
   await recovery.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 2');
   await expect(recovery).toBeVisible();
@@ -88,7 +88,7 @@ test('mission control retries failures, then explicitly continues with baseline 
   await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 4');
   await recovery.getByRole('button', { name: 'Continue with the baseline controller' }).click();
   await expect(page.getByLabel('Current action')).toContainText('Explore');
-  await expect(page.getByLabel('Remaining expedition time')).toHaveText('04:55');
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('17:55');
   await expect(page.getByRole('combobox', { name: 'Scientific objective' })).toHaveValue('unusual-minerals');
   await expect(page.getByRole('combobox', { name: 'Scientific objective' })).toBeDisabled();
   const timeline = page.getByRole('region', { name: 'Decision timeline' });

@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 
 test('saved and imported expeditions replay with independent controls and unchanged records', async ({ page, browser }) => {
+  // Replay the full eighteen-minute history in both contexts and exchange its JSON.
+  test.setTimeout(90_000);
   await page.clock.install();
   await page.goto('/');
   await page.getByRole('button', { name: 'Start expedition' }).click();
@@ -9,7 +11,7 @@ test('saved and imported expeditions replay with independent controls and unchan
   await page.getByRole('button', { name: 'Introduce dust storm' }).click();
   await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Avoid costly crossings.');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
-  await page.clock.fastForward(210_000);
+  await page.clock.fastForward(990_000);
   await page.getByRole('button', { name: /Open expedition/ }).click();
   const results = await page.getByRole('region', { name: 'Expedition results' }).textContent();
   const download = page.waitForEvent('download');
@@ -34,7 +36,7 @@ test('saved and imported expeditions replay with independent controls and unchan
   await replay.getByRole('group', { name: 'Replay speed' }).getByRole('button', { name: '4×' }).click();
   await page.screenshot({ path: 'test-results/replay-paused.png', fullPage: true });
   await replay.getByRole('button', { name: 'Resume replay' }).click();
-  await page.clock.fastForward(75_000);
+  await page.clock.fastForward(270_000);
   await expect(replay.getByRole('status')).toHaveText('Replay complete');
   await expect(replay.getByLabel('Replay science score')).toHaveText(String(source.results.scienceScore));
   await expect(page.getByRole('region', { name: 'Expedition results' })).toHaveText(results!);
@@ -58,7 +60,7 @@ test('saved and imported expeditions replay with independent controls and unchan
   expect(JSON.parse(await readFile((await (await copy).path())!, 'utf8'))).toEqual(source);
   await viewer.getByRole('button', { name: 'Restart replay' }).click();
   await viewer.getByRole('group', { name: 'Replay speed' }).getByRole('button', { name: '2×' }).click();
-  await viewer.clock.fastForward(150_000);
+  await viewer.clock.fastForward(540_000);
   await expect(viewer.getByRole('status')).toHaveText('Replay complete');
   await expect(viewer.getByRole('region', { name: 'Expedition results' })).toHaveText(results!);
 

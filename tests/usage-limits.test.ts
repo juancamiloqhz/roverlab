@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test';
 import { createDecisionHandler } from '../server/decisions';
 import { createTypeSafeController } from '../src/controllers/typesafe';
 import { exportExpeditionRecord, importExpeditionRecord } from '../src/records/contract';
-import { createExpedition, createReplay } from '../src/simulation/expedition';
+import { createReplay } from '../src/simulation/expedition';
+import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
 import type { ControllerInput } from '../src/simulation/types';
 
 const response = (input: ControllerInput, status = 200) => Response.json({
@@ -113,7 +114,7 @@ test('a completed response may cross the estimated-cost stopping rule and its hi
   session.dispatch({ type: 'continue-with-baseline' });
   session.advanceWallTime(1000);
   const record = roundTrip(session);
-  expect(record.version).toBe(7);
+  expect(record.version).toBe(8);
   expect(record.events.filter(event => event.type === 'inference-limits-changed')).toHaveLength(2);
   expect(record.startingConditions.inferenceLimits).toEqual({ providerAttempts: 250, estimatedCost: 0.1 });
   expect(outbound).toBe(2);

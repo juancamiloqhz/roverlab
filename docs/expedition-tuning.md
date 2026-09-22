@@ -1,5 +1,7 @@
 # Expedition comparison and tuning
 
+This report preserves first-release measurements on `ochre-basin-v5`. Its script now supplies that world explicitly. The playable default is `ochre-basin-v6`; see [expanded-world measurements](expanded-world.md) for ticket 07.
+
 Ticket [12](../.scratch/first-playable-release/issues/12-compare-and-tune-expeditions.md) was assessed with Bun 1.4.2, the baseline controller, and scripted choices through the public expedition session. No live TypeSafe calls were used. These experiments measure simulation tradeoffs, not live model quality or a guarantee that TypeSafe beats the baseline.
 
 ## Reproduce the playtests
@@ -91,4 +93,4 @@ Select two entries in **Saved expeditions**, then **Compare selected expeditions
 
 Matching conditions help interpret differences; they do not establish that a controller or instruction caused a better result. An early manual stop, for example, remains visible in ending condition and elapsed expedition time.
 
-The original measurements used version 1 records. Current exports use version 7 and retain baseline rule evidence and decision cadence. Replay supports versions 1 through 7 and always uses the saved scenario, so earlier `ochre-basin-v4` histories retain their original Sample C position. Session checks replay both layouts at 1×, 2×, and 4× and compare every event, decision, and final result. Existing simulation, perception, storm, inference, and replay checks remain applicable.
+The original measurements used version 1 records. Current exports use version 8 and retain explicit simulation settings, baseline rule evidence, and decision cadence. Replay supports versions 1 through 8 and always uses the saved scenario, so earlier `ochre-basin-v4` histories retain their original Sample C position. Session checks replay both layouts at 1×, 2×, and 4× and compare every event, decision, and final result. Existing simulation, perception, storm, inference, and replay checks remain applicable.

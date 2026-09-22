@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { createExpedition } from '../src/simulation/expedition';
+import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
 
 test('completed expeditions retain their own starting conditions, final knowledge and history across reset', () => {
   const expedition = createExpedition();

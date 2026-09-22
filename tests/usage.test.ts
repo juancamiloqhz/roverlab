@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test';
 import { createDecisionHandler } from '../server/decisions';
 import { createTypeSafeController } from '../src/controllers/typesafe';
-import { createExpedition, createReplay } from '../src/simulation/expedition';
+import { createReplay } from '../src/simulation/expedition';
+import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
 import { exportExpeditionRecord, importExpeditionRecord } from '../src/records/contract';
 import type { ControllerInput } from '../src/simulation/types';
 
@@ -44,7 +45,7 @@ test('a Jev choice retains confirmed outbound usage, identities and token-derive
   expect(record.id).toBe(attempt.submission.identity.expeditionId);
   const json = exportExpeditionRecord(record);
   const reopened = importExpeditionRecord(json);
-  expect(reopened.version).toBe(7);
+  expect(reopened.version).toBe(8);
   expect(reopened).toEqual(JSON.parse(json));
   const replay = createReplay(reopened);
   replay.dispatch({ type: 'start' });

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { chooseBaselineAction } from '../src/controllers/baseline';
 import type { ControllerInput } from '../src/simulation/types';
-import { createExpedition } from '../src/simulation/expedition';
+import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
 
 test('mission instructions enter baseline context and recorded edits without changing the objective or rubric', () => {
   const expedition = createExpedition();

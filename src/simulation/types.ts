@@ -24,6 +24,9 @@ export type Scenario = {
   depth: number;
   base: Position;
   sensorRange: number;
+  regions?: { name: string; min: Position; max: Position }[];
+  durationMs?: number;
+  batteryCapacity?: number;
   dustStorm?: DustStormConfiguration;
   obstacles: Position[];
   roughTerrain: Position[];
@@ -34,14 +37,14 @@ export type Scenario = {
 };
 export type Terrain = 'plain' | 'rough';
 type Observed = { id: string; position: Position; observedAtMs: number };
-export type TerrainObservation = Observed & { kind: 'terrain'; terrain: Terrain; blocked: boolean };
+export type TerrainObservation = Observed & { kind: 'terrain'; terrain: Terrain; blocked: boolean; region?: string };
 export type SampleObservation = Observed & {
   kind: 'sample'; sampleId: string; label: string; status: 'available' | 'cargo' | 'delivered';
   properties?: string[]; inspectedAtMs?: number;
 };
 // Presentation-only world truth. Never part of a snapshot or controller input.
 export type FullWorldView = {
-  terrain: Pick<TerrainObservation, 'id' | 'position' | 'terrain' | 'blocked'>[];
+  terrain: Pick<TerrainObservation, 'id' | 'position' | 'terrain' | 'blocked' | 'region'>[];
   samples: Pick<SampleObservation, 'id' | 'label' | 'position'>[];
   base: Position;
   storm: DustStorm | null;
@@ -188,6 +191,7 @@ export type EventDetail =
 export type ExpeditionEvent = EventDetail & { sequence: number; expedition: number; atMs: number };
 
 export type ExpeditionStartingConditions = {
+  simulationVersion?: 'grid-expedition-v1';
   decisionCadence?: 'meaningful-boundaries-v1';
   mission?: MissionPreferences;
   inferenceLimits?: InferenceLimits;
@@ -197,7 +201,7 @@ export type ExpeditionStartingConditions = {
   waitMs: number; inspectMs: number; collectMs: number; cargoCapacity: number; controller: ExpeditionController['id'];
 };
 export type ExpeditionRecord = {
-  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7; id: string; completedAt: string;
+  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8; id: string; completedAt: string;
   startingConditions: ExpeditionStartingConditions;
   events: ExpeditionEvent[]; decisions: Decision[]; results: ExpeditionSnapshot;
 };

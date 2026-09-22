@@ -57,7 +57,7 @@ test('compare saved expeditions with matching conditions and different instructi
   await page.clock.fastForward(60_000);
   await comparison.getByRole('button', { name: 'Return to live expedition' }).click();
   await expect(page.getByRole('button', { name: 'Resume expedition' })).toBeVisible();
-  await expect(page.getByLabel('Remaining expedition time')).toHaveText('04:59');
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('17:59');
   await library.getByRole('button', { name: `Open expedition ${records[0]!.id}`, exact: true }).click();
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export expedition JSON' }).click();

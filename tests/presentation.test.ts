@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { createExpedition } from '../src/simulation/expedition';
+import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
 
 test('a detached full-world view reveals hidden conditions without changing knowledge, decisions, or outcomes', () => {
   const watched = createExpedition();

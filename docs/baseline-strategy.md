@@ -1,5 +1,7 @@
 # Baseline scientific and resource rules
 
+The measurements here use the first-release world. The baseline rules remain unchanged in ticket 07; its [expanded-world playtest](expanded-world.md#deterministic-playtests) records the current default scenario outcome.
+
 Ticket 05 introduces `evidence-priorities-v1`. The baseline selects only complete candidates supplied by the session. It reads the effective mission, objective, observed properties, known route estimates, remaining time, battery, cargo, and detected storms. It never reads the scenario catalog, sample classifications, delivered scores, undiscovered properties, or terrain outside controller knowledge. Routing, execution, scoring, and action validity remain simulation responsibilities.
 
 Preset mode uses the exact [version 1 settings](mission-priorities.md) supplied to Jev. Free-text mode uses Balanced defaults and ignores the instructions' meaning. The interface discloses this limitation. A free-text expedition is not a matched-priority benchmark.

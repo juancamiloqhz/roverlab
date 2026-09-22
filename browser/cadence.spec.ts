@@ -12,7 +12,7 @@ test('choosing, executing and paused phases display recorded triggers through sa
   const timeline = page.getByRole('region', { name: 'Decision timeline' });
   await expect(timeline.locator('summary').first()).toContainText('Expedition started');
   await page.clock.runFor(1_000);
-  await expect(page.getByLabel('Remaining expedition time')).toHaveText('05:00');
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('18:00');
   await request.post('http://127.0.0.1:4174/release');
   await expect(phase).toHaveText('Code executing');
   await expect(page.getByLabel('Current action')).toContainText('Wait');
@@ -25,7 +25,7 @@ test('choosing, executing and paused phases display recorded triggers through sa
   await page.getByRole('button', { name: 'Pause expedition' }).click();
   await expect(phase).toHaveText('Paused');
   await page.clock.runFor(10_000);
-  await expect(page.getByLabel('Remaining expedition time')).toHaveText('04:55');
+  await expect(page.getByLabel('Remaining expedition time')).toHaveText('17:55');
   await page.getByRole('button', { name: 'Stop expedition' }).click();
   await page.getByRole('button', { name: /^Open expedition / }).first().click();
   const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });

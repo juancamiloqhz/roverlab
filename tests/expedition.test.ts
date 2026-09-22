@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { createExpedition } from '../src/simulation/expedition';
+import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
 
 test('a baseline expedition reconsiders discoveries, delivers science, and ends after five simulated minutes', () => {
   const expedition = createExpedition();

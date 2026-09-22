@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test';
 import { createDecisionHandler } from '../server/decisions';
 import { createTypeSafeController } from '../src/controllers/typesafe';
 import { exportExpeditionRecord, importExpeditionRecord } from '../src/records/contract';
-import { createExpedition, createReplay } from '../src/simulation/expedition';
+import { createReplay } from '../src/simulation/expedition';
+import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
 import type { ControllerInput } from '../src/simulation/types';
 
 const success = (input: ControllerInput) => Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 },

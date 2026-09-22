@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
-import { createExpedition, createReplay } from '../src/simulation/expedition';
+import { createReplay } from '../src/simulation/expedition';
+import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
 import { exportExpeditionRecord, importExpeditionRecord } from '../src/records/contract';
 import { createTypeSafeController } from '../src/controllers/typesafe';
 import { createDecisionHandler } from '../server/decisions';

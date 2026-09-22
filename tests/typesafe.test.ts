@@ -1,7 +1,7 @@
 import { expect, test, spyOn } from 'bun:test';
 import { createDecisionHandler } from '../server/decisions';
 import { createTypeSafeController } from '../src/controllers/typesafe';
-import { createExpedition } from '../src/simulation/expedition';
+import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
 import type { ControllerInput, Scenario } from '../src/simulation/types';
 import { chooseBaselineAction } from '../src/controllers/baseline';
 import type { Fetch } from '@typesafe-ai/sdk';
