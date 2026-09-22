@@ -55,6 +55,7 @@ export type Action =
   | { kind: 'wait'; durationMs: number };
 export type ActionCandidate = Action & { id: string };
 export type ExpeditionController = {
+  readAttempt?: (identity: AttemptIdentity) => Promise<AttemptEvidence | null>;
   id: 'baseline' | 'scripted' | 'typesafe';
   decide(input: ControllerInput, context: { signal: AbortSignal; reserveAttempt(retryIndex?: 0 | 1): AttemptIdentity | null; reportAttempt(evidence: AttemptEvidence): void }): string | Promise<string | DecisionOutcome>;
 };
@@ -172,7 +173,7 @@ export type ExpeditionStartingConditions = {
   waitMs: number; inspectMs: number; collectMs: number; cargoCapacity: number; controller: ExpeditionController['id'];
 };
 export type ExpeditionRecord = {
-  format: 'roverlab-expedition'; version: 1 | 2; id: string; completedAt: string;
+  format: 'roverlab-expedition'; version: 1 | 2 | 3; id: string; completedAt: string;
   startingConditions: ExpeditionStartingConditions;
   events: ExpeditionEvent[]; decisions: Decision[]; results: ExpeditionSnapshot;
 };

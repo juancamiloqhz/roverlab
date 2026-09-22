@@ -10,12 +10,14 @@ function pricingFor(model: string | null, capturedAtMs: number): InferencePricin
     capturedAt: new Date(capturedAtMs).toISOString(), verifiedAt: '2026-09-22', source: 'https://docs.typesafe.ai/models' } : null;
 }
 
-export function responseMetadata(result: { model?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown } } | null,
+export function responseMetadata(value: unknown,
   requestId: unknown, capturedAtMs: number, credential: string): Pick<AttemptEvidence, 'resolvedModel' | 'providerRequestId' | 'inputTokens' | 'outputTokens' | 'pricing'> {
+  const result = value && typeof value === 'object' ? value as Record<string, unknown> : null;
+  const usage = result?.usage && typeof result.usage === 'object' ? result.usage as Record<string, unknown> : null;
   const safeId = (value: unknown) => metadataIdSchema.safeParse(value).success && !(value as string).includes(credential) ? value as string : null;
   const tokenCount = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
   const model = safeId(result?.model);
   const resolvedModel = model === 'jev-latest' || model === 'jev-preview' ? null : model;
-  return { resolvedModel, providerRequestId: safeId(requestId), inputTokens: tokenCount(result?.usage?.input_tokens),
-    outputTokens: tokenCount(result?.usage?.output_tokens), pricing: pricingFor(resolvedModel, capturedAtMs) };
+  return { resolvedModel, providerRequestId: safeId(requestId), inputTokens: tokenCount(usage?.input_tokens),
+    outputTokens: tokenCount(usage?.output_tokens), pricing: pricingFor(resolvedModel, capturedAtMs) };
 }

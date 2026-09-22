@@ -1,4 +1,4 @@
-import { sameAttempt } from '../../shared/inference';
+import { attemptEvidenceSchema, usageResponseSchema, sameAttempt } from '../../shared/inference';
 import { DECISION_DEADLINE_MS, responseSchema, validChoice, wallClock, type DecisionClock, type DecisionOutcome } from '../../shared/decisions';
 import type { ExpeditionController } from '../simulation/types';
 
@@ -7,7 +7,21 @@ export function createTypeSafeController(options: {
 } = {}): ExpeditionController {
   const transport = options.fetch ?? ((url, init) => fetch(url, init));
   const clock = options.clock ?? wallClock;
-  return { id: 'typesafe', async decide(input, context) {
+  return { id: 'typesafe', async readAttempt(identity) {
+    const abort = new AbortController();
+    let clear = () => {};
+    const timeout = new Promise<null>(resolve => { clear = clock.after(DECISION_DEADLINE_MS, () => { abort.abort(); resolve(null); }); });
+    const read = async () => {
+      try {
+        const response = await transport('/api/decision/usage', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identity }), signal: abort.signal });
+        if (!response.ok) return null;
+        const parsed = usageResponseSchema.safeParse(await response.json());
+        return parsed.success && parsed.data.evidence && sameAttempt(identity, parsed.data.evidence.identity) ? parsed.data.evidence : null;
+      } catch { return null; }
+    };
+    try { return await Promise.race([read(), timeout]); } finally { clear(); }
+  }, async decide(input, context) {
     const abort = new AbortController();
     const cancel = () => abort.abort();
     context.signal.addEventListener('abort', cancel, { once: true });
@@ -27,13 +41,15 @@ export function createTypeSafeController(options: {
         try {
           const response = await transport('/api/decision', { method: 'POST',
             headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input, expiresAt, identity }), signal: abort.signal });
-          if (!response.ok) return { failure: 'unavailable' };
-          const parsed = responseSchema.safeParse(await response.json());
-          if (!parsed.success) return { failure: 'invalid-output' };
-          if (parsed.data.evidence) {
-            if (!sameAttempt(parsed.data.evidence.identity, identity)) return { failure: 'invalid-output' };
-            context.reportAttempt(parsed.data.evidence);
+          const body: unknown = await response.json();
+          const accounting = attemptEvidenceSchema.safeParse(body && typeof body === 'object' && 'evidence' in body ? body.evidence : null);
+          if (accounting.success) {
+            if (!sameAttempt(accounting.data.identity, identity)) return { failure: 'invalid-output' };
+            context.reportAttempt(accounting.data);
           }
+          if (!response.ok) return { failure: 'unavailable' };
+          const parsed = responseSchema.safeParse(body);
+          if (!parsed.success) return { failure: 'invalid-output' };
           if (!parsed.data.ok) {
             if (parsed.data.retryable && attempt === 0) continue;
             return { failure: parsed.data.failure };

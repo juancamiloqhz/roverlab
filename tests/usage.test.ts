@@ -44,7 +44,7 @@ test('a Jev choice retains confirmed outbound usage, identities and token-derive
   expect(record.id).toBe(attempt.submission.identity.expeditionId);
   const json = exportExpeditionRecord(record);
   const reopened = importExpeditionRecord(json);
-  expect(reopened.version).toBe(2);
+  expect(reopened.version).toBe(3);
   expect(reopened).toEqual(JSON.parse(json));
   const replay = createReplay(reopened);
   replay.dispatch({ type: 'start' });

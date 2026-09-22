@@ -107,7 +107,7 @@ const results: z.ZodType<ExpeditionSnapshot> = z.strictObject({
 });
 
 const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
-  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2)]), id: z.uuid(), completedAt: z.iso.datetime(),
+  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3)]), id: z.uuid(), completedAt: z.iso.datetime(),
   startingConditions, events: z.array(event).min(1).max(100_000), decisions: z.array(decision).max(10_000), results,
 }).refine(record => {
   const { results: final, startingConditions: start, decisions, events } = record;
@@ -151,7 +151,7 @@ const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
 export const MAX_RECORD_BYTES = 32 * 1024 * 1024;
 export function validateExpeditionRecord(value: unknown): ExpeditionRecord {
   const parsed = recordSchema.safeParse(value);
-  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1 or 2 JSON export with valid history and results.');
+  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, or 3 JSON export with valid history and results.');
   return parsed.data;
 }
 export function importExpeditionRecord(json: string): ExpeditionRecord {

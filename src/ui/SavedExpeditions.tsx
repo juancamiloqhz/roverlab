@@ -14,7 +14,8 @@ const mergeRecords = (existing: ExpeditionRecord[], added: ExpeditionRecord[]) =
   [...new Map([...existing, ...added].map(record => [record.id, record])).values()]
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt));
 
-export function SavedExpeditions({ completedRecords, onOpen, onCompare }: {
+export function SavedExpeditions({ completedRecords, onOpen, onCompare, refreshInferenceUsage, refreshingUsage, usageRefreshMessage }: {
+  refreshInferenceUsage: () => Promise<void>; refreshingUsage: boolean; usageRefreshMessage: string;
   completedRecords: ExpeditionRecord[]; onOpen: (record: ExpeditionRecord) => void;
   onCompare: (records: [ExpeditionRecord, ExpeditionRecord]) => void;
 }) {
@@ -24,13 +25,14 @@ export function SavedExpeditions({ completedRecords, onOpen, onCompare }: {
   const [importError, setImportError] = useState('');
   const [importing, setImporting] = useState(false);
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
-  const attempted = useRef(new Set<string>());
+  const attempted = useRef(new Map<string, ExpeditionRecord>());
+  const saveQueue = useRef(Promise.resolve());
 
   useEffect(() => {
     let active = true;
     loadExpeditionRecords().then(loaded => {
       if (!active) return;
-      setRecords(records => mergeRecords(records, loaded));
+      setRecords(records => mergeRecords(loaded, records));
       setSavedIds(ids => new Set([...ids, ...loaded.map(record => record.id)]));
     }).catch(error => { if (active) setStorageError(errorMessage(error)); });
     return () => { active = false; };
@@ -38,12 +40,16 @@ export function SavedExpeditions({ completedRecords, onOpen, onCompare }: {
 
   useEffect(() => {
     for (const record of completedRecords) {
-      if (attempted.current.has(record.id)) continue;
-      attempted.current.add(record.id);
+      const previous = attempted.current.get(record.id);
+      if (previous?.events.length === record.events.length) continue;
+      attempted.current.set(record.id, record);
       // Keep an in-memory copy available for export even if durable storage fails.
       setRecords(records => mergeRecords(records, [record]));
-      saveExpeditionRecord(record).then(() => setSavedIds(ids => new Set([...ids, record.id])))
-        .catch(error => setStorageError(errorMessage(error)));
+      setSavedIds(ids => { const next = new Set(ids); next.delete(record.id); return next; });
+      saveQueue.current = saveQueue.current.then(() => saveExpeditionRecord(record, previous))
+        .then(() => {
+          if (attempted.current.get(record.id) === record) setSavedIds(ids => new Set([...ids, record.id]));
+        }).catch(error => setStorageError(errorMessage(error)));
     }
   }, [completedRecords]);
 
@@ -72,6 +78,13 @@ export function SavedExpeditions({ completedRecords, onOpen, onCompare }: {
       </label>
     </div>
     <p className="memory-note">Completed expeditions save automatically in this browser. Open one to inspect its history; an active expedition will pause.</p>
+    <div className="record-toolbar">
+      <button className="secondary" disabled={refreshingUsage} onClick={() => void refreshInferenceUsage()}>
+        {refreshingUsage ? 'Refreshing accounting…' : 'Refresh inference accounting'}
+      </button>
+      <p className="memory-note">Check for later evidence from submissions made on this page, including stopped expeditions. This sends no new Jev requests. Reopen a saved expedition to inspect updated accounting.</p>
+    </div>
+    {usageRefreshMessage && <p role="status">{usageRefreshMessage}</p>}
     <div className="record-toolbar comparison-selection">
       <p>Select two expeditions to compare their conditions and results. Comparing pauses an active expedition.</p>
       <button className="secondary" disabled={comparisonIds.length !== 2} onClick={() => {

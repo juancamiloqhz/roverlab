@@ -8,6 +8,8 @@ export function useExpedition(createSession: () => ExpeditionSession = createDef
   const [session] = useState(createSession);
   const [snapshot, setSnapshot] = useState(session.getSnapshot);
   const [decisions, setDecisions] = useState(session.getDecisions);
+  const [refreshingUsage, setRefreshingUsage] = useState(false);
+  const [usageRefreshMessage, setUsageRefreshMessage] = useState('');
   const [completedRecords, setCompletedRecords] = useState(session.getCompletedRecords);
   const decisionRevision = useRef(snapshot.decisionRevision);
   const lastTime = useRef(performance.now());
@@ -44,6 +46,20 @@ export function useExpedition(createSession: () => ExpeditionSession = createDef
     setCompletedRecords(records => [...records, record]);
   }), [session]);
 
+  useEffect(() => session.onUsageUpdated(() => {
+    refresh();
+    setCompletedRecords(session.getCompletedRecords());
+  }), [session, refresh]);
+
+  const refreshInferenceUsage = async () => {
+    setRefreshingUsage(true);
+    setUsageRefreshMessage('');
+    try {
+      await session.refreshInferenceUsage();
+      setUsageRefreshMessage('Accounting refresh complete. Any unresolved usage remains unavailable.');
+    } finally { setRefreshingUsage(false); }
+  };
+
   const pauseForInspection = () => {
     // Opening a saved record must not consume any additional expedition time.
     session.dispatch({ type: 'pause' });
@@ -58,5 +74,5 @@ export function useExpedition(createSession: () => ExpeditionSession = createDef
     refresh();
   };
 
-  return { snapshot, decisions, completedRecords, pauseForInspection, dispatch, getFullWorldView: session.getFullWorldView };
+  return { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, getFullWorldView: session.getFullWorldView };
 }

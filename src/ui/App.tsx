@@ -43,7 +43,7 @@ function describeAction(action: Action | null, status: ExpeditionSnapshot['statu
 }
 
 export function App({ createSession }: { createSession?: () => ExpeditionSession } = {}) {
-  const { snapshot, decisions, completedRecords, pauseForInspection, dispatch, getFullWorldView } = useExpedition(createSession);
+  const { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, getFullWorldView } = useExpedition(createSession);
   const [selectedRecord, setSelectedRecord] = useState<ExpeditionRecord | null>(null);
   const [comparison, setComparison] = useState<[ExpeditionRecord, ExpeditionRecord] | null>(null);
   const openRecord = (record: ExpeditionRecord) => { pauseForInspection(); setComparison(null); setSelectedRecord(record); window.scrollTo({ top: 0, behavior: 'instant' }); };
@@ -159,7 +159,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
           </aside>
         </div>
         </>}
-        <SavedExpeditions completedRecords={completedRecords} onOpen={openRecord} onCompare={compareRecords} />
+        <SavedExpeditions refreshingUsage={refreshingUsage} usageRefreshMessage={usageRefreshMessage} refreshInferenceUsage={refreshInferenceUsage} completedRecords={completedRecords} onOpen={openRecord} onCompare={compareRecords} />
         <footer><span>ROVERLAB <span className="footer-separator">/</span> AUTONOMOUS EXPLORATION</span><span>{comparison ? 'Saved expedition comparison' : <>{selectedRecord ? selectedRecord.results.controllerHistory.map(entry => controllerLabels[entry.controller]).join(' → ') : controllerLabel} · {selectedRecord?.results.area.id ?? snapshot.area.id}</>}</span></footer>
       </main>
     </div>

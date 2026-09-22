@@ -64,3 +64,54 @@ test('unknown model pricing remains visibly incomplete without guessing a price'
   await expect(page.getByLabel('Decision usage', { exact: true })).toContainText('Resolved model: jev-future');
   await expect(page.getByLabel('Decision usage', { exact: true })).toContainText('Pricing basis: Unavailable');
 });
+
+
+test('lost local responses reconcile after stop and reset, save once, and replay without changing exports', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  let submissions = 0;
+  await page.route('**/api/decision', async route => {
+    submissions++;
+    await route.fetch();
+    await route.abort('failed');
+  });
+  await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  const usage = page.getByLabel('Inference usage', { exact: true });
+  await expect(usage).toContainText('Unconfirmed submissions: 2');
+  await expect(usage).toContainText('lower bound');
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await expect(page.getByText('Saved in this browser', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await page.getByRole('button', { name: 'Refresh inference accounting' }).click();
+  await expect(page.getByText('Accounting refresh complete.', { exact: false })).toBeVisible();
+  await expect(usage).toContainText('Local submissions: 0 / 100');
+  await expect(usage).toContainText('Estimated inference cost: $0.00000000 USD');
+  await page.getByRole('button', { name: 'Refresh inference accounting' }).click();
+  await expect(page.getByText('Accounting refresh complete.', { exact: false })).toBeVisible();
+  expect(submissions).toBe(2);
+  await expect(page.getByText('Saved in this browser', { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: /Open expedition/ }).click();
+  const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
+  await expect(saved).toContainText('Confirmed provider attempts: 2');
+  await expect(saved).toContainText('Provider retries: 1');
+  await expect(saved).toContainText('Input tokens: 2000');
+  await expect(saved).toContainText('Estimated inference cost: $0.00008400 USD');
+  await saved.getByText(/Decision 1 ·/).click();
+  await expect(saved.getByLabel('Decision usage', { exact: true })).toContainText('Provider execution: Response received');
+  await expect(saved).toContainText('failed');
+  let apiCalls = 0;
+  await page.route('**/api/**', route => { apiCalls++; return route.abort(); });
+  const downloadJson = async () => {
+    const pending = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export expedition JSON' }).click();
+    return readFile((await (await pending).path())!, 'utf8');
+  };
+  const original = await downloadJson();
+  await page.getByRole('button', { name: 'Replay expedition', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Expedition replay' })).toContainText('Estimated inference cost: $0.00008400 USD');
+  expect(await downloadJson()).toBe(original);
+  expect(apiCalls).toBe(0);
+  await page.screenshot({ path: 'test-results/jev-failure-accounting.png', fullPage: true });
+});

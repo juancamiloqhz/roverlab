@@ -1,4 +1,4 @@
-import { sameAttempt, summarizeUsage, type AttemptEvidence } from '../../shared/inference';
+import { canUpdateEvidence, sameAttempt, summarizeUsage, type AttemptEvidence } from '../../shared/inference';
 import { chooseBaselineAction } from '../controllers/baseline';
 import { INFERENCE_LIMIT, MAX_MISSION_INSTRUCTIONS_LENGTH, type DecisionOutcome } from '../../shared/decisions';
 import { findRoute, movementEnergy, positionKey, travelCost, travelTimeMs } from './navigation';
@@ -52,6 +52,9 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   let controller = replay ? recordedController(replay.source.startingConditions.controller) : options.controller ?? baseline;
   let decisions: Decision[] = [];
   const decisionListeners = new Set<() => void>();
+  const usageReads: (() => Promise<void>)[] = [];
+  let refreshingUsage: Promise<void> | null = null;
+  const usageListeners = new Set<() => void>();
   let inFlight: { decision: Decision; expedition: number; abort: AbortController } | null = null;
   const startingConditions: ExpeditionStartingConditions = {
     scenario, objective, instructions, rubric: structuredClone(scienceRubric), durationMs: DURATION_MS, fixedStepMs: STEP_MS,
@@ -81,7 +84,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
 
   function initialState(): ExpeditionSnapshot {
     return {
-      ...(!replay || replay.source.version === 2 ? { usage: summarizeUsage([]) } : {}),
+      ...(!replay || replay.source.version >= 2 ? { usage: summarizeUsage([]) } : {}),
       stormIntroduced: false, stormAvailable: !!scenario.dustStorm,
       controller: controller.id, inferenceAttempts: 0, inferenceLatencyMs: 0, decisionFailure: null,
       controllerHistory: [{ controller: controller.id, atMs: 0, firstDecisionId: 1 }],
@@ -128,7 +131,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       observations: state.observations, memory: state.memory, candidates: availableCandidates(), previousAction,
     });
     const decision: Decision = { reason: state.reconsiderationReason ?? 'action-completed', id: decisions.length + 1, input, controller: controller.id, status: 'pending', inferenceAttempts: 0 };
-    if (controller.id === 'typesafe' && (!replay || replay.source.version === 2)) decision.accounting = { expeditionId, attempts: [] };
+    if (controller.id === 'typesafe' && (!replay || replay.source.version >= 2)) decision.accounting = { expeditionId, attempts: [] };
     state.reconsiderationReason = null;
     decisions.push(decision);
     if (state.usage) state.usage = summarizeUsage(decisions);
@@ -139,6 +142,8 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     record({ type: 'decision-requested', decision });
     if (replay) return;
     const requestedAt = wallNow();
+    const accountingOrigin = { expedition, decisions, state };
+    const readAttempt = controller.readAttempt;
     try {
       const result = controller.decide(structuredClone(input), {
         signal: request.abort.signal,
@@ -153,9 +158,13 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
           decision.accounting.attempts.push({ submission, evidence: null });
           state.usage = summarizeUsage(decisions);
           record({ type: 'inference-attempt', decisionId: decision.id, attempt: state.inferenceAttempts, controller: decision.controller, submission });
+          if (readAttempt) usageReads.push(async () => {
+            const evidence = await readAttempt(identity);
+            if (evidence) accountAttempt(evidence, accountingOrigin);
+          });
           return identity;
         },
-        reportAttempt: evidence => { if (inFlight === request && !request.abort.signal.aborted) accountAttempt(evidence); },
+        reportAttempt: evidence => accountAttempt(evidence, accountingOrigin),
       });
       if (typeof result === 'string') applyDecision(result, 0);
       else {
@@ -174,14 +183,20 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     }
   }
 
-  function accountAttempt(evidence: AttemptEvidence) {
-    const decision = inFlight?.decision;
+  function accountAttempt(evidence: AttemptEvidence, origin = { expedition, decisions, state }) {
+    const decision = origin.decisions.find(item => item.id === evidence.identity.decisionId);
     const attempt = decision?.accounting?.attempts.find(item => sameAttempt(item.submission.identity, evidence.identity));
-    if (!attempt || attempt.evidence) return;
+    if (!attempt || !canUpdateEvidence(attempt.evidence, evidence)) return;
     attempt.evidence = structuredClone(evidence);
-    state.usage = summarizeUsage(decisions);
-    state.decisionRevision++;
-    record({ type: 'inference-accounted', evidence });
+    origin.state.usage = summarizeUsage(origin.decisions);
+    origin.state.decisionRevision++;
+    record({ type: 'inference-accounted', evidence }, origin.state.elapsedMs, origin.expedition);
+    const completedIndex = completedRecords.findIndex(item => item.id === evidence.identity.expeditionId);
+    if (completedIndex !== -1) {
+      completedRecords[completedIndex] = structuredClone({ ...completedRecords[completedIndex]!,
+        decisions: origin.decisions, results: origin.state, events: events.filter(event => event.expedition === origin.expedition) });
+    }
+    for (const listener of usageListeners) listener();
   }
 
   function applyDecision(result: string | DecisionOutcome | null, latencyMs: number) {
@@ -369,7 +384,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 2, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 3, id: expeditionId, completedAt: new Date().toISOString(),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();
@@ -463,6 +478,14 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
 
   const session = {
     getSnapshot: () => structuredClone(state),
+    refreshInferenceUsage() {
+      refreshingUsage ??= Promise.all(usageReads.map(read => read().catch(() => {}))).then(() => {}).finally(() => { refreshingUsage = null; });
+      return refreshingUsage;
+    },
+    onUsageUpdated(listener: () => void) {
+      usageListeners.add(listener);
+      return () => { usageListeners.delete(listener); };
+    },
     getCompletedRecords: () => structuredClone(completedRecords),
     onExpeditionCompleted(listener: (record: ExpeditionRecord) => void) {
       completionListeners.add(listener);
@@ -670,6 +693,8 @@ export function createReplay(value: unknown): ExpeditionSession {
     getCompletedRecords: () => [],
     onExpeditionCompleted: () => () => {},
     onDecisionSettled: () => () => {},
+    onUsageUpdated: () => () => {},
+    refreshInferenceUsage: async () => {},
     dispatch(command) {
       if (command.type === 'start' && status === 'ready') {
         status = 'running';

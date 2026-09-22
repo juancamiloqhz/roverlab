@@ -1,4 +1,4 @@
-import { sameAttempt } from '../../shared/inference';
+import { canUpdateEvidence, sameAttempt } from '../../shared/inference';
 import type { Action, ControllerHistoryEntry, Decision, ExpeditionRecord } from '../simulation/types';
 
 // Compare JSON data independent of object-key order, including probability maps.
@@ -32,7 +32,7 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
   const history: ControllerHistoryEntry[] = [];
 
   for (const event of record.events) {
-    if (ended && event.type !== 'decision-settled') return false;
+    if (ended && event.type !== 'decision-settled' && !(record.version >= 3 && event.type === 'inference-accounted')) return false;
     switch (event.type) {
       case 'started':
         if (started) return false;
@@ -74,7 +74,7 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
         if (!decision || pendingId !== decision.id || decision.status !== 'pending'
           || event.controller !== decision.controller || event.attempt !== ++attempts) return false;
         decision.inferenceAttempts++;
-        if (record.version === 2) {
+        if (record.version >= 2) {
           if (!event.submission || !decision.accounting || event.submission.identity.expeditionId !== record.id
             || event.submission.identity.decisionId !== decision.id) return false;
           decision.accounting.attempts.push({ submission: event.submission, evidence: null });
@@ -84,7 +84,8 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
       case 'inference-accounted': {
         const decision = decisions.get(event.evidence.identity.decisionId);
         const attempt = decision?.accounting?.attempts.find(item => sameAttempt(item.submission.identity, event.evidence.identity));
-        if (!decision || pendingId !== decision.id || decision.status !== 'pending' || !attempt || attempt.evidence) return false;
+        if (!decision || !attempt || !canUpdateEvidence(attempt.evidence, event.evidence)
+          || (record.version < 3 && (pendingId !== decision.id || decision.status !== 'pending'))) return false;
         attempt.evidence = event.evidence;
         break;
       }
@@ -116,7 +117,7 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
           || requested.inferenceAttempts !== settled.inferenceAttempts || !sameRecordData(requested.accounting, settled.accounting) || !sameRecordData(requested.input, settled.input)
           || (requested.status === 'discarded' ? settled.status !== 'discarded'
             : !invalid.has(settled.id) || !settled.failure || !['failed', 'invalid'].includes(settled.status))) return false;
-        decisions.set(settled.id, settled);
+        decisions.set(settled.id, structuredClone(settled));
         pendingId = null;
         break;
       }

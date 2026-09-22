@@ -26,7 +26,19 @@ export async function loadExpeditionRecords(): Promise<ExpeditionRecord[]> {
   } finally { database.close(); }
 }
 
-export async function saveExpeditionRecord(value: ExpeditionRecord): Promise<void> {
+// Only the live session can supply its previous snapshot for an accounting-only
+// update. Ordinary imports still reject any conflicting identity.
+function accountingExtension(previous: ExpeditionRecord, next: ExpeditionRecord) {
+  const execution = (record: ExpeditionRecord) => ({ ...record, events: [],
+    decisions: record.decisions.map(({ accounting: _accounting, ...decision }) => decision),
+    results: { ...record.results, usage: undefined, decisionRevision: undefined } });
+  return previous.version === 3 && next.version === 3 && sameRecordData(execution(previous), execution(next))
+    && next.events.length > previous.events.length
+    && sameRecordData(previous.events, next.events.slice(0, previous.events.length))
+    && next.events.slice(previous.events.length).every(event => event.type === 'inference-accounted');
+}
+
+export async function saveExpeditionRecord(value: ExpeditionRecord, previous?: ExpeditionRecord): Promise<void> {
   const record = validateExpeditionRecord(value);
   const database = await openDatabase();
   try {
@@ -38,8 +50,8 @@ export async function saveExpeditionRecord(value: ExpeditionRecord): Promise<voi
       existing.onsuccess = () => {
         if (existing.result === undefined) store.add(record);
         else if (!sameRecordData(existing.result, record)) {
-          conflict = true;
-          transaction.abort();
+          if (previous && sameRecordData(existing.result, previous) && accountingExtension(previous, record)) store.put(record);
+          else { conflict = true; transaction.abort(); }
         }
       };
       transaction.oncomplete = () => resolve();
