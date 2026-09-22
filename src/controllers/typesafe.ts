@@ -1,3 +1,4 @@
+import { sameAttempt } from '../../shared/inference';
 import { DECISION_DEADLINE_MS, responseSchema, validChoice, wallClock, type DecisionClock, type DecisionOutcome } from '../../shared/decisions';
 import type { ExpeditionController } from '../simulation/types';
 
@@ -21,13 +22,18 @@ export function createTypeSafeController(options: {
     const run = async (): Promise<DecisionOutcome> => {
       for (let attempt = 0; attempt < 2; attempt++) {
         if (abort.signal.aborted || clock.now() >= expiresAt) return { failure: context.signal.aborted ? 'cancelled' : 'deadline' };
-        if (!context.reserveAttempt()) return { failure: 'budget' };
+        const identity = context.reserveAttempt(attempt as 0 | 1);
+        if (!identity) return { failure: 'budget' };
         try {
           const response = await transport('/api/decision', { method: 'POST',
-            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input, expiresAt }), signal: abort.signal });
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input, expiresAt, identity }), signal: abort.signal });
           if (!response.ok) return { failure: 'unavailable' };
           const parsed = responseSchema.safeParse(await response.json());
           if (!parsed.success) return { failure: 'invalid-output' };
+          if (parsed.data.evidence) {
+            if (!sameAttempt(parsed.data.evidence.identity, identity)) return { failure: 'invalid-output' };
+            context.reportAttempt(parsed.data.evidence);
+          }
           if (!parsed.data.ok) {
             if (parsed.data.retryable && attempt === 0) continue;
             return { failure: parsed.data.failure };

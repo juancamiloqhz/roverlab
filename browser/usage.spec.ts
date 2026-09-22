@@ -1,0 +1,66 @@
+import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+
+test('Jev usage exposes token-derived estimates and retains its pricing through save and replay', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  const usage = page.getByLabel('Inference usage', { exact: true });
+  await expect(usage).toContainText('Confirmed provider attempts: 1');
+  await expect(usage).toContainText('Local submissions: 1 / 100');
+  await expect(usage).toContainText('Estimated inference cost: $0.00004200 USD');
+  const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await timeline.getByText(/Decision 1 ·/).click();
+  await expect(timeline).toContainText('Input tokens: 1000');
+  await expect(timeline).toContainText('Output tokens: 40');
+  await expect(timeline).toContainText('Resolved model: jev-1.13.0');
+  await expect(timeline).toContainText('Input rate: $0.042 per million tokens');
+  await expect(timeline).toContainText('Output rate: $0 per million tokens');
+  await expect(timeline).toContainText('Prompt version: rover-action-v1');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/jev-usage-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await expect(page.getByText('Saved in this browser', { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: /Open expedition/ }).click();
+  const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
+  await expect(saved).toContainText('Estimated inference cost: $0.00004200 USD');
+  await page.route('**/api/decision', route => route.abort());
+  await page.getByRole('button', { name: 'Replay expedition', exact: true }).click();
+  const replay = page.getByRole('region', { name: 'Expedition replay' });
+  await expect(replay).toContainText('Estimated inference cost: $0.00004200 USD');
+  await expect(replay).toContainText('original expedition');
+  await page.screenshot({ path: 'test-results/jev-usage.png', fullPage: true });
+});
+
+test('legacy usage is unavailable while its local counter remains visible', async ({ page }) => {
+  await page.goto('/');
+  const json = await readFile(new URL('../tests/fixtures/legacy-usage-v1.json', import.meta.url));
+  await page.getByLabel('Import expedition JSON').setInputFiles({ name: 'legacy.json', mimeType: 'application/json', buffer: json });
+  const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
+  await expect(saved).toContainText('Legacy local submissions: 1');
+  await expect(saved).toContainText('Estimated inference cost: Unavailable');
+  await saved.getByText(/Decision 1 ·/).click();
+  await expect(saved).toContainText('Model and token metadata were not recorded');
+});
+
+
+test('unknown model pricing remains visibly incomplete without guessing a price', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
+  await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Unknown pricing for browser verification');
+  await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await page.getByRole('button', { name: 'Start expedition' }).click();
+  const usage = page.getByLabel('Inference usage', { exact: true });
+  await expect(usage).toContainText('Confirmed provider attempts: 1');
+  await expect(usage).toContainText('Input tokens: 1000');
+  await expect(usage).toContainText('Estimated inference cost: Unavailable · incomplete');
+  await expect(usage).toContainText('Known estimated inference cost subtotal: $0.00000000 USD');
+  await page.getByText(/Decision 1 ·/).click();
+  await expect(page.getByLabel('Decision usage', { exact: true })).toContainText('Resolved model: jev-future');
+  await expect(page.getByLabel('Decision usage', { exact: true })).toContainText('Pricing basis: Unavailable');
+});

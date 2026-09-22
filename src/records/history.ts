@@ -1,3 +1,4 @@
+import { sameAttempt } from '../../shared/inference';
 import type { Action, ControllerHistoryEntry, Decision, ExpeditionRecord } from '../simulation/types';
 
 // Compare JSON data independent of object-key order, including probability maps.
@@ -63,9 +64,9 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
         if (!started || pendingId !== null || activeAction || selectedAction || decision.id !== decisions.size + 1
           || decision.status !== 'pending' || decision.inferenceAttempts !== 0 || decision.controller !== controller
           || decision.input.objective !== objective || decision.input.instructions !== instructions
-          || decision.input.instructionsVersion !== instructionsVersion || decision.input.atMs !== event.atMs) return false;
+          || decision.input.instructionsVersion !== instructionsVersion || decision.input.atMs !== event.atMs || (decision.accounting && decision.accounting.attempts.length !== 0)) return false;
         pendingId = decision.id;
-        decisions.set(decision.id, { ...decision });
+        decisions.set(decision.id, structuredClone(decision));
         break;
       }
       case 'inference-attempt': {
@@ -73,6 +74,18 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
         if (!decision || pendingId !== decision.id || decision.status !== 'pending'
           || event.controller !== decision.controller || event.attempt !== ++attempts) return false;
         decision.inferenceAttempts++;
+        if (record.version === 2) {
+          if (!event.submission || !decision.accounting || event.submission.identity.expeditionId !== record.id
+            || event.submission.identity.decisionId !== decision.id) return false;
+          decision.accounting.attempts.push({ submission: event.submission, evidence: null });
+        }
+        break;
+      }
+      case 'inference-accounted': {
+        const decision = decisions.get(event.evidence.identity.decisionId);
+        const attempt = decision?.accounting?.attempts.find(item => sameAttempt(item.submission.identity, event.evidence.identity));
+        if (!decision || pendingId !== decision.id || decision.status !== 'pending' || !attempt || attempt.evidence) return false;
+        attempt.evidence = event.evidence;
         break;
       }
       case 'decision-made': {
@@ -100,7 +113,7 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
         const requested = decisions.get(settled.id);
         if (!requested || pendingId !== settled.id || settled.latencyMs === undefined
           || requested.controller !== settled.controller || requested.reason !== settled.reason
-          || requested.inferenceAttempts !== settled.inferenceAttempts || !sameRecordData(requested.input, settled.input)
+          || requested.inferenceAttempts !== settled.inferenceAttempts || !sameRecordData(requested.accounting, settled.accounting) || !sameRecordData(requested.input, settled.input)
           || (requested.status === 'discarded' ? settled.status !== 'discarded'
             : !invalid.has(settled.id) || !settled.failure || !['failed', 'invalid'].includes(settled.status))) return false;
         decisions.set(settled.id, settled);

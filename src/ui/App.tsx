@@ -1,3 +1,4 @@
+import { UsageSummary } from './InferenceUsage';
 import { useState } from 'react';
 import { ExpeditionResults } from './ExpeditionResults';
 import { ExpeditionComparison } from './ExpeditionComparison';
@@ -94,7 +95,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
                   <button className="primary" disabled={snapshot.inferenceAttempts >= INFERENCE_LIMIT || snapshot.decisionPending} onClick={() => dispatch({ type: 'retry-decision' })}>Retry</button>
                   <button className="secondary" disabled={snapshot.decisionPending} onClick={() => dispatch({ type: 'continue-with-baseline' })}>Continue with the baseline controller</button>
                 </div>
-                {snapshot.inferenceAttempts >= INFERENCE_LIMIT && <p>Retry unavailable: all {INFERENCE_LIMIT} inference attempts have been used. Continue with baseline, stop, or reset for a new expedition.</p>}
+                {snapshot.inferenceAttempts >= INFERENCE_LIMIT && <p>Retry unavailable: all {INFERENCE_LIMIT} local submissions have been used. Continue with baseline, stop, or reset for a new expedition.</p>}
               </>}
             </section>}
             <p className="world-note"><span aria-hidden="true">↳</span> You set the pace. The rover chooses its own targets and routes.</p>
@@ -111,7 +112,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
                 {snapshot.controller === 'scripted' && <option value="scripted">Scripted verification</option>}
               </select>
               <p className="memory-note">Select before starting. Reset to change controller.</p>
-              <p aria-label="Inference usage">Inference attempts: {snapshot.inferenceAttempts} / {INFERENCE_LIMIT} · Total latency: {snapshot.inferenceLatencyMs.toFixed(0)} ms</p>
+              <UsageSummary usage={snapshot.usage} localSubmissions={snapshot.inferenceAttempts} waitMs={snapshot.inferenceLatencyMs} limit={INFERENCE_LIMIT} />
             </section>
             <section className="objective-block">
               <label className="field-label" htmlFor="scientific-objective">SCIENTIFIC OBJECTIVE</label>

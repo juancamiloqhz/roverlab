@@ -142,7 +142,7 @@ test('TypeSafe-only and mixed-controller histories survive browser storage and i
   const comparison = viewer.getByRole('region', { name: 'Expedition comparison', exact: true });
   await expect(comparison).toContainText('Mixed-controller expedition');
   const inference = comparison.getByRole('table', { name: 'Inference metrics' });
-  await expect(inference.getByRole('row', { name: /Inference attempts/ })).toHaveText('Inference attempts13');
+  await expect(inference.getByRole('row', { name: /Local submissions/ })).toHaveText('Local submissions13');
   await expect(inference).toContainText(`${JSON.parse(mixed).results.inferenceLatencyMs.toFixed(0)} ms`);
   await expect(comparison.getByRole('table', { name: 'Simulation results' })).not.toContainText('probabilities');
   await expect(comparison.getByRole('status')).toContainText('Conditions differ');

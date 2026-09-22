@@ -196,3 +196,10 @@ footer { display: flex; justify-content: space-between; gap: 20px; border-top: 1
 .instruction-history { margin: 0; padding-left: 18px; max-height: 300px; overflow-y: auto; }
 .instruction-history strong { font-size: 11px; color: #aec4af; }
 @media (max-width: 500px) { .app-header .local-tag { display: none; } .records-link { margin-right: 0; } }
+
+.inference-usage { font-size: 0.8rem; line-height: 1.55; overflow-wrap: anywhere; }
+.inference-usage p { margin: 0.45rem 0; }
+.decision-usage { margin: 1rem 0; padding: 0.9rem; border: 1px solid #334650; border-radius: 8px; }
+.attempt-evidence { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid #334650; overflow-wrap: anywhere; }
+.attempt-evidence h5 { margin: 0 0 0.5rem; font-size: 0.9rem; }
+.attempt-evidence a { color: #82d4ce; }

@@ -1,3 +1,4 @@
+import { formatInferenceCost } from './InferenceUsage';
 import type { ReactNode } from 'react';
 import type { ExpeditionRecord, ExpeditionStartingConditions } from '../simulation/types';
 import { sameRecordData } from '../records/history';
@@ -135,8 +136,14 @@ export function ExpeditionComparison({ records, onClose, onOpen }: {
       { label: 'Ending condition', render: record => ({ timeout: 'Time budget reached', 'manual-stop': 'Stopped by mission control', stranded: 'Stranded rover' })[record.results.endingCondition!] },
     ]} />
     <ComparisonTable title="Inference metrics" records={records} rows={[
-      { label: 'Inference attempts', render: record => record.results.inferenceAttempts },
-      { label: 'Total request latency (wall time)', render: record => `${record.results.inferenceLatencyMs.toFixed(0)} ms` },
+      { label: 'Local submissions', render: record => record.results.inferenceAttempts },
+      { label: 'Confirmed provider attempts', render: record => record.results.usage?.providerAttempts ?? 'Unavailable in legacy record' },
+      { label: 'Provider retries', render: record => record.results.usage?.retries ?? 'Unavailable in legacy record' },
+      { label: 'Unconfirmed submissions', render: record => record.results.usage?.unconfirmedSubmissions ?? 'Unavailable in legacy record' },
+      { label: 'Input tokens', render: record => record.results.usage?.inputTokens ?? 'Unavailable' },
+      { label: 'Output tokens', render: record => record.results.usage?.outputTokens ?? 'Unavailable' },
+      { label: 'Estimated inference cost', render: record => formatInferenceCost(record.results.usage?.estimatedCost) },
+      { label: 'Cumulative inference wait (wall time)', render: record => `${record.results.inferenceLatencyMs.toFixed(0)} ms` },
     ]} />
     <p>Inference latency does not consume expedition time. Inspect each expedition’s decision timeline for its returned probabilities; these are not science scores or a guarantee of correctness.</p>
   </section>;

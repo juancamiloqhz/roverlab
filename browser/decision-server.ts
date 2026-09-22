@@ -10,7 +10,7 @@ const handler = createDecisionHandler({ apiKey: 'browser-test-key', fetch: async
     releases.add(release);
     init!.signal!.addEventListener('abort', () => { releases.delete(release); reject(new Error('cancelled')); }, { once: true });
   });
-  return Response.json({ answers: { action: {
+  return Response.json({ model: input.instructions === 'Unknown pricing for browser verification' ? 'jev-future' : 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 }, answers: { action: {
     type: 'choice', choice: input.instructions === 'Invalid choice for browser verification' ? 'invented' : 'wait:5000', confidence: 0,
     probabilities: Object.fromEntries(input.candidates.map(candidate => [candidate.id, 1 / input.candidates.length])),
   } } });

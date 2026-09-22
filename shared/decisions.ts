@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { attemptEvidenceSchema, attemptIdentitySchema } from './inference';
 import type { ControllerInput } from '../src/simulation/types';
 
 export const DECISION_DEADLINE_MS = 5_000;
@@ -53,7 +54,7 @@ export const failureMessages: Record<DecisionFailure, string> = {
   deadline: 'The decision exceeded its five-second wall-clock deadline.',
   'invalid-output': 'TypeSafe returned an invalid decision. No action was executed.',
   'invalid-request': 'The decision request was invalid.',
-  budget: 'The 100-attempt inference budget is exhausted.',
+  budget: 'The 100-submission inference budget is exhausted.',
   cancelled: 'The obsolete decision was cancelled.',
 };
 export const choiceSchema = z.strictObject({
@@ -71,10 +72,10 @@ export function validChoice(value: unknown, input: ControllerInput): ReturnedCho
     || Math.abs(Object.values(choice.probabilities).reduce((sum, p) => sum + p, 0) - 1) > 0.01) return null;
   return choice;
 }
-export const requestSchema = z.strictObject({ input: controllerInputSchema, expiresAt: number });
+export const requestSchema = z.strictObject({ input: controllerInputSchema, expiresAt: number, identity: attemptIdentitySchema });
 export const responseSchema = z.discriminatedUnion('ok', [
-  z.strictObject({ ok: z.literal(true), choice: choiceSchema }),
-  z.strictObject({ ok: z.literal(false), failure: failureSchema, retryable: z.boolean() }),
+  z.strictObject({ ok: z.literal(true), choice: choiceSchema, evidence: attemptEvidenceSchema.refine(value => value.dispatch === 'dispatched') }),
+  z.strictObject({ ok: z.literal(false), failure: failureSchema, retryable: z.boolean(), evidence: attemptEvidenceSchema.nullable() }),
 ]);
 export type DecisionResponse = z.infer<typeof responseSchema>;
 export type DecisionOutcome = { selectedCandidateId?: string; probabilities?: Record<string, number>; confidence?: number; failure?: DecisionFailure };

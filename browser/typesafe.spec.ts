@@ -31,11 +31,11 @@ test('TypeSafe pending decisions keep the camera and controls responsive and sho
   await timeline.getByText(/Decision 1 ·/).click();
   await expect(timeline).toContainText('TypeSafe controller');
   await expect(timeline.getByRole('table', { name: 'Available actions' })).toContainText('Returned probability');
-  await expect(timeline).toContainText('Inference attempts: 1');
+  await expect(timeline).toContainText('Local submissions: 1');
   await page.getByRole('button', { name: 'Stop expedition' }).click();
   const results = page.getByRole('region', { name: 'Expedition results' });
   await expect(results).toContainText('TypeSafe controller');
-  await expect(results).toContainText('1 inference attempts');
+  await expect(results).toContainText('Local submissions: 1');
   await page.screenshot({ path: 'test-results/typesafe-probabilities.png', fullPage: true });
 });
 
@@ -99,7 +99,7 @@ test('mission control retries failures, then explicitly continues with baseline 
   await page.clock.runFor(1_000);
   await page.getByRole('button', { name: 'Stop expedition' }).click();
   await expect(page.getByRole('region', { name: 'Expedition results' })).toContainText('Controllers used: TypeSafe controller → Baseline controller');
-  await expect(page.getByRole('region', { name: 'Expedition results' })).toContainText('4 inference attempts');
+  await expect(page.getByRole('region', { name: 'Expedition results' })).toContainText('Local submissions: 4');
   await expect(recovery).toHaveCount(0);
   await page.screenshot({ path: 'test-results/typesafe-recovery.png', fullPage: true });
   await page.getByRole('button', { name: 'Reset expedition' }).click();

@@ -53,7 +53,7 @@ test('compare saved expeditions with matching conditions and different instructi
   await expect(simulation.getByRole('row', { name: /Samples inspected/ })).toHaveText('Samples inspected11');
   await expect(simulation.getByRole('row', { name: /Ending condition/ })).toContainText('Stopped by mission control');
   await expect(simulation).not.toContainText('latency');
-  await expect(comparison.getByRole('table', { name: 'Inference metrics' })).toContainText('Total request latency (wall time)');
+  await expect(comparison.getByRole('table', { name: 'Inference metrics' })).toContainText('Cumulative inference wait (wall time)');
   await page.clock.fastForward(60_000);
   await comparison.getByRole('button', { name: 'Return to live expedition' }).click();
   await expect(page.getByRole('button', { name: 'Resume expedition' })).toBeVisible();

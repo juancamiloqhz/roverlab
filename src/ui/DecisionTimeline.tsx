@@ -1,3 +1,4 @@
+import { DecisionUsage } from './InferenceUsage';
 import { Fragment, useState } from 'react';
 import { scientificObjectives } from '../simulation/science';
 import type { Action, ControllerHistoryEntry, Decision, Observation } from '../simulation/types';
@@ -33,14 +34,14 @@ function DecisionEntry({ decision }: { decision: Decision }) {
     {open && <div className="decision-details" aria-label={`Decision ${decision.id} details`}>
       <p><strong>{controllerLabels[decision.controller]}</strong> · {reasons[decision.reason]} · {decision.status}</p>
       {decision.failure && <p>{failureMessages[decision.failure]}</p>}
-      <p>Inference attempts: {decision.inferenceAttempts}</p>
+      <DecisionUsage decision={decision} />
       <p>Selected action: <strong>{decision.action ? actionName(decision.action) : 'None'}</strong></p>
       <p>{scientificObjectives[input.objective]} · Instructions version {input.instructionsVersion}</p>
       <blockquote>{input.instructions || 'No mission instructions supplied.'}</blockquote>
       <p>Battery {input.battery.toFixed(1)} / {input.batteryCapacity} · Energy used {input.energyUsed.toFixed(1)} · Cargo {input.cargo.length} / {input.cargoCapacity} · Remaining {seconds(input.remainingMs)}</p>
       <p>Cargo: {input.cargo.map(sample => sample.label).join(', ') || 'Empty'}. Position: {input.position.x}, {input.position.z} · Sensor range: {input.sensorRange} cells.</p>
       <p>Previous completed action: {input.previousAction ? actionName(input.previousAction) : 'None'}.</p>
-      {decision.latencyMs !== undefined && <p>Request latency (wall time): {decision.latencyMs.toFixed(1)} ms</p>}
+      {decision.latencyMs !== undefined && <p>Decision latency (wall time): {decision.latencyMs.toFixed(1)} ms</p>}
       <div className="decision-table"><table aria-label="Available actions">
         <caption>Available complete actions · {input.candidates.length}</caption>
         <thead><tr><th>Candidate identity</th><th>Action and target</th><th>Known route estimate</th><th>Selection</th>{decision.probabilities && <th>Returned probability</th>}</tr></thead>

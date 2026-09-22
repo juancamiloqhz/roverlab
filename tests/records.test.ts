@@ -142,7 +142,7 @@ test('record imports reject unknown fields, malformed histories, nonfinite value
     (record: any) => { record.events = record.events.filter((event: any) => !event.type.startsWith('action-')); },
     (record: any) => { record.decisions[0].input.instructions = 'Invented history'; },
     (record: any) => { record.results.controller = 'typesafe'; record.results.controllerHistory[0].controller = 'typesafe'; },
-    (record: any) => { record.version = 2; },
+    (record: any) => { record.version = 99; },
     (record: any) => { record.startingConditions.apiKey = 'not-a-real-secret'; },
     (record: any) => { record.decisions[0].input.credentials = 'not-a-real-secret'; },
     (record: any) => { record.events[0].type = 'execute-script'; },

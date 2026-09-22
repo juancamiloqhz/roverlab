@@ -174,7 +174,7 @@ test('records with unsupported settings or irreproducible history are rejected b
     mutate(record);
     expect(() => createReplay(record)).toThrow('Cannot replay this expedition');
   }
-  expect(() => createReplay({ ...source, version: 2 })).toThrow('Invalid expedition record');
+  expect(() => createReplay({ ...source, version: 99 })).toThrow('Invalid expedition record');
   expect(() => createReplay({ ...source, decisions: [] })).toThrow('Invalid expedition record');
   expect(live.getCompletedRecords()).toEqual([source]);
 });

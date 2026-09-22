@@ -1,3 +1,4 @@
+import { sameAttempt, summarizeUsage, type AttemptEvidence } from '../../shared/inference';
 import { chooseBaselineAction } from '../controllers/baseline';
 import { INFERENCE_LIMIT, MAX_MISSION_INSTRUCTIONS_LENGTH, type DecisionOutcome } from '../../shared/decisions';
 import { findRoute, movementEnergy, positionKey, travelCost, travelTimeMs } from './navigation';
@@ -17,7 +18,7 @@ const COLLECT_MS = 4_000;
 const RECHARGE_PER_SECOND = 5;
 const roundEnergy = (value: number) => Math.round(value * 1e9) / 1e9;
 
-type ExpeditionOptions = { scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController };
+type ExpeditionOptions = { wallNow?: () => number; scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController };
 
 export function createExpedition(options: ExpeditionOptions = {}) {
   return createSimulation(options).session;
@@ -67,6 +68,8 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   const pendingCompletions = new Map<number, Omit<ExpeditionRecord, 'events'>>();
   const events: ExpeditionEvent[] = [];
   let expedition = 1;
+  let expeditionId = replay?.source.id ?? crypto.randomUUID();
+  const wallNow = options.wallNow ?? (() => performance.now());
   let storm: DustStorm | null = null;
   let movementEnergyMultiplier = 1;
   let state: ExpeditionSnapshot = initialState();
@@ -78,6 +81,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
 
   function initialState(): ExpeditionSnapshot {
     return {
+      ...(!replay || replay.source.version === 2 ? { usage: summarizeUsage([]) } : {}),
       stormIntroduced: false, stormAvailable: !!scenario.dustStorm,
       controller: controller.id, inferenceAttempts: 0, inferenceLatencyMs: 0, decisionFailure: null,
       controllerHistory: [{ controller: controller.id, atMs: 0, firstDecisionId: 1 }],
@@ -124,26 +128,34 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       observations: state.observations, memory: state.memory, candidates: availableCandidates(), previousAction,
     });
     const decision: Decision = { reason: state.reconsiderationReason ?? 'action-completed', id: decisions.length + 1, input, controller: controller.id, status: 'pending', inferenceAttempts: 0 };
+    if (controller.id === 'typesafe' && (!replay || replay.source.version === 2)) decision.accounting = { expeditionId, attempts: [] };
     state.reconsiderationReason = null;
     decisions.push(decision);
+    if (state.usage) state.usage = summarizeUsage(decisions);
     state.decisionRevision++;
     const request = { decision, expedition, abort: new AbortController() };
     inFlight = request;
     state.decisionPending = true;
     record({ type: 'decision-requested', decision });
     if (replay) return;
-    const requestedAt = performance.now();
+    const requestedAt = wallNow();
     try {
       const result = controller.decide(structuredClone(input), {
         signal: request.abort.signal,
-        reserveAttempt() {
-          if (request !== inFlight || request.abort.signal.aborted || state.inferenceAttempts >= INFERENCE_LIMIT) return false;
+        reserveAttempt(retryIndex = 0) {
+          if (request !== inFlight || request.abort.signal.aborted || state.inferenceAttempts >= INFERENCE_LIMIT) return null;
           state.inferenceAttempts++;
           decision.inferenceAttempts++;
           state.decisionRevision++;
-          record({ type: 'inference-attempt', decisionId: decision.id, attempt: state.inferenceAttempts, controller: decision.controller });
-          return true;
+          const identity = { expeditionId, decisionId: decision.id, attemptId: crypto.randomUUID() };
+          const submission = { identity, retryIndex, submittedAtMs: Date.now() };
+          decision.accounting ??= { expeditionId, attempts: [] };
+          decision.accounting.attempts.push({ submission, evidence: null });
+          state.usage = summarizeUsage(decisions);
+          record({ type: 'inference-attempt', decisionId: decision.id, attempt: state.inferenceAttempts, controller: decision.controller, submission });
+          return identity;
         },
+        reportAttempt: evidence => { if (inFlight === request && !request.abort.signal.aborted) accountAttempt(evidence); },
       });
       if (typeof result === 'string') applyDecision(result, 0);
       else {
@@ -151,7 +163,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         // It must never be replayed as catch-up after a pending decision.
         pendingMs %= STEP_MS;
         const settle = (id: string | DecisionOutcome | null) => {
-          applyDecision(id, performance.now() - requestedAt);
+          applyDecision(id, Math.max(0, wallNow() - requestedAt));
           // Let the wall-time scheduler reset its anchor at the exact end of the freeze.
           for (const listener of decisionListeners) listener();
         };
@@ -160,6 +172,16 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     } catch {
       applyDecision(null, 0);
     }
+  }
+
+  function accountAttempt(evidence: AttemptEvidence) {
+    const decision = inFlight?.decision;
+    const attempt = decision?.accounting?.attempts.find(item => sameAttempt(item.submission.identity, evidence.identity));
+    if (!attempt || attempt.evidence) return;
+    attempt.evidence = structuredClone(evidence);
+    state.usage = summarizeUsage(decisions);
+    state.decisionRevision++;
+    record({ type: 'inference-accounted', evidence });
   }
 
   function applyDecision(result: string | DecisionOutcome | null, latencyMs: number) {
@@ -347,7 +369,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 1, id: crypto.randomUUID(), completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 2, id: expeditionId, completedAt: new Date().toISOString(),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();
@@ -460,6 +482,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       return () => { decisionListeners.delete(listener); };
     },
     getRecord: () => structuredClone({ startingConditions, events, results: {
+      ...(state.usage ? { usage: state.usage } : {}),
       controller: state.controller, controllerHistory: state.controllerHistory, inferenceAttempts: state.inferenceAttempts, inferenceLatencyMs: state.inferenceLatencyMs,
       endingCondition: state.endingCondition, scienceScore: state.scienceScore, energyUsed: state.energyUsed,
       discoveryCount: state.discoveryCount, inspectionCount: state.inspectionCount,
@@ -528,6 +551,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         invalidateDecision();
         if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: controller.id });
         expedition++;
+        expeditionId = crypto.randomUUID();
         runStartingConditions = { ...startingConditions, objective, instructions, controller: controller.id };
         decisions = [];
         storm = null;
@@ -570,12 +594,16 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
           session.dispatch({ type: 'set-controller', controller: event.controller });
           break;
         case 'controller-changed': session.dispatch({ type: 'continue-with-baseline' }); break;
+        case 'inference-accounted': accountAttempt(event.evidence); break;
         case 'inference-attempt':
           if (!inFlight || inFlight.decision.id !== event.decisionId) throw new Error('Cannot replay this expedition: missing recorded decision.');
           state.inferenceAttempts++;
           inFlight.decision.inferenceAttempts++;
           state.decisionRevision++;
-          record({ type: 'inference-attempt', decisionId: inFlight.decision.id, attempt: state.inferenceAttempts, controller: controller.id });
+          if (event.submission) inFlight.decision.accounting!.attempts.push({ submission: event.submission, evidence: null });
+          if (state.usage) state.usage = summarizeUsage(decisions);
+          record({ type: 'inference-attempt', decisionId: inFlight.decision.id, attempt: state.inferenceAttempts, controller: controller.id,
+            ...(event.submission ? { submission: event.submission } : {}) });
           break;
         case 'decision-requested': selectAction(); break;
         case 'decision-invalid': {
