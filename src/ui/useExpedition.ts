@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createExpedition, type ExpeditionSession } from '../simulation/expedition';
-import type { ExpeditionCommand } from '../simulation/types';
+import { createExpedition, createMatchedBaseline, type ExpeditionSession } from '../simulation/expedition';
+import type { ExpeditionCommand, ExpeditionRecord } from '../simulation/types';
 import { createTypeSafeController } from '../controllers/typesafe';
 
 const createDefaultSession = () => createExpedition({ typesafeController: createTypeSafeController() });
 export function useExpedition(createSession: () => ExpeditionSession = createDefaultSession) {
-  const [session] = useState(createSession);
+  const [session, setSession] = useState(createSession);
+  const sessionFactory = useRef(createSession);
+  const matchedSession = useRef<ExpeditionSession | null>(null);
+  const sessions = useRef([session]);
   const [snapshot, setSnapshot] = useState(session.getSnapshot);
   const [decisions, setDecisions] = useState(session.getDecisions);
   const [refreshingUsage, setRefreshingUsage] = useState(false);
@@ -42,20 +45,19 @@ export function useExpedition(createSession: () => ExpeditionSession = createDef
     return () => { window.clearInterval(timer); unsubscribe(); };
   }, [session, advanceToNow, refresh]);
 
-  useEffect(() => session.onExpeditionCompleted(record => {
-    setCompletedRecords(records => [...records, record]);
-  }), [session]);
-
-  useEffect(() => session.onUsageUpdated(() => {
-    refresh();
-    setCompletedRecords(session.getCompletedRecords());
-  }), [session, refresh]);
+  useEffect(() => {
+    const collect = () => setCompletedRecords(sessions.current.flatMap(item => item.getCompletedRecords()));
+    collect();
+    const subscriptions = sessions.current.flatMap(item => [item.onExpeditionCompleted(collect),
+      item.onUsageUpdated(() => { refresh(); collect(); })]);
+    return () => subscriptions.forEach(unsubscribe => unsubscribe());
+  }, [session, refresh]);
 
   const refreshInferenceUsage = async () => {
     setRefreshingUsage(true);
     setUsageRefreshMessage('');
     try {
-      await session.refreshInferenceUsage();
+      await Promise.all(sessions.current.map(item => item.refreshInferenceUsage()));
       setUsageRefreshMessage('Accounting refresh complete. Any unresolved usage remains unavailable.');
     } finally { setRefreshingUsage(false); }
   };
@@ -71,8 +73,32 @@ export function useExpedition(createSession: () => ExpeditionSession = createDef
     // Account for wall time at the old speed/status before applying a command.
     advanceToNow();
     session.dispatch(command);
+    if (command.type === 'reset' && matchedSession.current === session) {
+      matchedSession.current = null;
+      replaceSession(sessionFactory.current());
+      return;
+    }
     refresh();
   };
 
-  return { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, getFullWorldView: session.getFullWorldView };
+  function replaceSession(next: ExpeditionSession) {
+    sessions.current.push(next);
+    setSession(next);
+    const state = next.getSnapshot();
+    decisionRevision.current = state.decisionRevision;
+    lastTime.current = performance.now();
+    setSnapshot(state);
+    setDecisions(next.getDecisions());
+  }
+
+  const startMatchedBaseline = (record: ExpeditionRecord) => {
+    const status = session.getSnapshot().status;
+    if (status === 'running' || status === 'paused') throw new Error('Stop or reset the active expedition before starting a matched baseline.');
+    const next = createMatchedBaseline(record);
+    next.dispatch({ type: 'start' });
+    matchedSession.current = next;
+    replaceSession(next);
+  };
+
+  return { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, startMatchedBaseline, getFullWorldView: session.getFullWorldView };
 }

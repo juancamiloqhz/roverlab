@@ -116,7 +116,9 @@ export function SavedExpeditions({ completedRecords, onOpen, onCompare, refreshI
   </section>;
 }
 
-export function SavedExpeditionView({ record, onClose }: { record: ExpeditionRecord; onClose: () => void }) {
+export function SavedExpeditionView({ record, onClose, onRunBaseline, active }: {
+  record: ExpeditionRecord; onClose: () => void; onRunBaseline: (record: ExpeditionRecord) => void; active: boolean;
+}) {
   const [selectedDecisionId, setSelectedDecisionId] = useState<number | null>(null);
   const selectedDecision = record.decisions.find(item => item.id === selectedDecisionId);
   const [error, setError] = useState('');
@@ -149,7 +151,15 @@ export function SavedExpeditionView({ record, onClose }: { record: ExpeditionRec
       {replay ? <button className="secondary" onClick={() => setReplay(null)}>Back to saved record</button>
         : <button className="primary" onClick={startReplay}>Replay expedition</button>}
       <button className="primary" onClick={download}>Export expedition JSON</button>
+      <button className="primary" disabled={active} onClick={() => {
+        setError('');
+        try { onRunBaseline(record); } catch (error) { setError(errorMessage(error)); }
+      }}>Run matched baseline</button>
     </div>
+    <p>Run a fresh baseline with these supported conditions and the recorded schedule. It makes its own choices with zero provider requests and saves a separate record. Compare actual outcomes after it ends.</p>
+    {active && <p>Stop or reset the active expedition before starting a matched baseline.</p>}
+    {!record.results.interventions && <p>Legacy schedule data is incomplete. Only recorded mission edits and storms can be reconstructed; unrecorded future events are unavailable.</p>}
+    {record.matchedFrom && <p>Matched from {record.matchedFrom.recordId}, record version {record.matchedFrom.recordVersion}. Schedule basis: {record.matchedFrom.scheduleBasis}.</p>}
     {error && <p role="alert">{error}</p>}
     {replay && <ExpeditionReplay session={replay} />}
     {replay && <h3>Recorded final results</h3>}

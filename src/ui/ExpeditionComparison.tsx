@@ -1,16 +1,15 @@
 import { MissionPreferences } from './MissionPreferences';
 import { formatInferenceCost } from './InferenceUsage';
 import type { ReactNode } from 'react';
-import type { ExpeditionRecord, ExpeditionStartingConditions } from '../simulation/types';
+import type { ExpeditionRecord } from '../simulation/types';
+import { compareExpeditionRecords } from '../records/matching';
+import { CompletionEvidence, ControllerProvenance, PresetAdherence } from './ComparisonEvidence';
+import { InterventionSchedule } from './InterventionSchedule';
+import { InferenceLimitHistory } from './InferenceLimits';
 import { sameRecordData } from '../records/history';
 import { scientificObjectives } from '../simulation/science';
 import { controllerLabels } from './controllerLabels';
 import { formatTime } from './formatTime';
-
-function simulationSettings(start: ExpeditionStartingConditions) {
-  const { scenario, objective, rubric, instructions, mission, controller, ...settings } = start;
-  return settings;
-}
 
 function instructionHistory(record: ExpeditionRecord) {
   const started = record.events.find(event => event.type === 'started')!;
@@ -91,44 +90,33 @@ export function ExpeditionComparison({ records, onClose, onOpen }: {
   records: [ExpeditionRecord, ExpeditionRecord]; onClose: () => void; onOpen: (record: ExpeditionRecord) => void;
 }) {
   const [left, right] = records;
-  const scenarioMatches = sameRecordData(left.startingConditions.scenario, right.startingConditions.scenario);
-  const settingsMatch = sameRecordData(simulationSettings(left.startingConditions), simulationSettings(right.startingConditions));
+  const conditions = compareExpeditionRecords(left, right);
+  const scenarioMatches = conditions.scenario;
+  const settingsMatch = conditions.simulation;
   // Pre-start objective selections are recorded as events; results carry the fixed objective actually used.
-  const objectiveMatches = left.results.objective === right.results.objective;
-  const rubricMatches = sameRecordData(left.results.rubric, right.results.rubric);
+  const objectiveMatches = conditions.objective;
+  const rubricMatches = conditions.rubric;
   const instructionsMatch = sameRecordData(instructionHistory(left), instructionHistory(right));
   const interventionsMatch = sameRecordData(interventions(left), interventions(right));
-  const conditionsMatch = scenarioMatches && settingsMatch && objectiveMatches && rubricMatches && interventionsMatch;
+  const conditionsMatch = scenarioMatches && settingsMatch && objectiveMatches && rubricMatches && conditions.missionRequests && conditions.schedule;
   return <section className="expedition-comparison" aria-label="Expedition comparison">
     <p className="eyebrow">SAVED EXPEDITIONS · READ ONLY</p>
     <div className="record-toolbar"><h2>Compare expeditions</h2><button className="secondary" onClick={onClose}>Return to live expedition</button></div>
-    <p role="status" className={`comparison-status ${conditionsMatch ? '' : 'different'}`}>{conditionsMatch
-      ? 'Matching starting conditions, objective, rubric, and environmental interventions.'
+    <p role="status" className={`comparison-status ${conditionsMatch && conditions.scheduleComplete ? '' : 'different'}`}>{!conditions.scheduleComplete
+      ? 'Legacy conditions are incomplete. Recorded events can be compared, but a complete schedule match is unavailable.' : conditionsMatch
+      ? 'Matching external conditions: starting scenario, simulation settings, objective, rubric, mission requests, and intervention schedule.'
       : 'Conditions differ. Interpret the results with the differences below.'}</p>
+    {conditions.freeText && <p>Free-text interpretation differs: the baseline uses Balanced defaults and cannot interpret arbitrary instructions. This is not a matched-priority benchmark.</p>}
+    <p>These results describe the two recorded runs, including ties, losses, failures, and manual stops. No general advantage follows from one pair. Same-state alternatives were not executed and do not count as realized outcomes.</p>
     <div className="comparison-records">{records.map((record, index) => <div key={record.id}>
       <h3>Expedition {index + 1}</h3><p>{new Date(record.completedAt).toLocaleString()}</p><small>{record.id}</small>
+      <p>{record.results.controllerHistory.map(entry => controllerLabels[entry.controller]).join(' → ')}</p>
+      {new Set(record.results.controllerHistory.map(entry => entry.controller)).size > 1 && <strong>Mixed-controller expedition</strong>}
       <button className="secondary" onClick={() => onOpen(record)}>Inspect expedition {index + 1}</button>
     </div>)}</div>
-    <ComparisonTable title="Comparison conditions" records={records} rows={[
-      { label: 'Scientific objective', matches: objectiveMatches, render: record => scientificObjectives[record.results.objective] },
-      { label: 'Delivery rubric', matches: rubricMatches, render: ({ results: { rubric } }) => `Unrelated ${rubric.unrelated} · Suggestive ${rubric.suggestive} · Strong evidence ${rubric['strong-evidence']}` },
-      { label: 'Starting scenario', matches: scenarioMatches, render: record => <ScenarioConditions record={record} /> },
-      { label: 'Simulation settings', matches: settingsMatch, render: record => <SimulationSettings record={record} /> },
-      { label: 'Environmental interventions', matches: interventionsMatch, render: record => <EnvironmentalInterventions record={record} /> },
-    ]} />
-    <p>{instructionsMatch ? 'Mission instruction histories match.' : 'Mission instruction histories differ.'} Instructions and controllers are comparison variables.</p>
-    <p>{sameRecordData(left.results.mission?.history ?? instructionHistory(left), right.results.mission?.history ?? instructionHistory(right)) ? 'Mission preference histories match.' : 'Mission preference histories differ.'}</p>
-    <ComparisonTable title="Instructions and controllers" records={records} rows={[
-      { label: 'Mission mode and preferences', render: record => <MissionPreferences snapshot={record.results} /> },
-      { label: 'Mission instructions', render: record => <ol className="instruction-history">{instructionHistory(record).map((entry, index) => <li key={index}>
-        <strong>{entry.when} · {formatTime(entry.atMs)} ({entry.atMs} ms)</strong><p>{entry.instructions || 'None supplied.'}</p>
-      </li>)}</ol> },
-      { label: 'Controller history', render: record => <>{new Set(record.results.controllerHistory.map(entry => entry.controller)).size > 1 && <strong>Mixed-controller expedition</strong>}
-        {record.results.controllerHistory.map((entry, index) => <p key={index}>{controllerLabels[entry.controller]} · {formatTime(entry.atMs)} ({entry.atMs} ms)</p>)}
-      </> },
-    ]} />
     <ComparisonTable title="Simulation results" records={records} rows={[
       { label: 'Science score', render: record => record.results.scienceScore },
+      { label: 'Safe completion', render: record => <CompletionEvidence record={record} /> },
       { label: 'Samples delivered', render: record => record.results.deliveredSamples.length },
       { label: 'Samples discovered', render: record => record.results.discoveryCount },
       { label: 'Terrain cells discovered', render: record => record.results.memory.filter(item => item.kind === 'terrain').length },
@@ -139,16 +127,46 @@ export function ExpeditionComparison({ records, onClose, onOpen }: {
       { label: 'Expedition time', render: record => `${formatTime(record.results.elapsedMs)} (${record.results.elapsedMs / 1_000}s)` },
       { label: 'Ending condition', render: record => ({ timeout: 'Time budget reached', 'manual-stop': 'Stopped by mission control', stranded: 'Stranded rover' })[record.results.endingCondition!] },
     ]} />
+    <ComparisonTable title="Comparison conditions" records={records} rows={[
+      { label: 'Scientific objective', matches: objectiveMatches, render: record => scientificObjectives[record.results.objective] },
+      { label: 'Delivery rubric', matches: rubricMatches, render: ({ results: { rubric } }) => `Unrelated ${rubric.unrelated} · Suggestive ${rubric.suggestive} · Strong evidence ${rubric['strong-evidence']}` },
+      { label: 'Starting scenario', matches: scenarioMatches, render: record => <ScenarioConditions record={record} /> },
+      { label: 'Simulation settings', matches: settingsMatch, render: record => <SimulationSettings record={record} /> },
+      { label: 'Mission requests', matches: conditions.missionRequests, render: record => <MissionPreferences snapshot={record.results} /> },
+      { label: 'Intervention schedule', matches: conditions.scheduleComplete ? conditions.schedule : undefined, render: record => record.results.interventions
+        ? <InterventionSchedule snapshot={record.results} /> : 'Unavailable as a complete legacy schedule; only recorded requests can be reconstructed.' },
+      { label: 'Environmental interventions', matches: interventionsMatch, render: record => <EnvironmentalInterventions record={record} /> },
+    ]} />
+    <p>{instructionsMatch ? 'Mission instruction histories match.' : 'Mission instruction histories differ.'}</p>
+    <p>{conditions.missionApplications === null ? 'Effective mission history unavailable in legacy data.' : conditions.missionApplications ? 'Mission preference histories match.' : 'Mission preference histories differ. Matching requests can apply at different safe boundaries along different paths.'}</p>
+    <ComparisonTable title="Instructions and controllers" records={records} rows={[
+      { label: 'Mission mode and preferences', render: record => <MissionPreferences snapshot={record.results} /> },
+      { label: 'Mission instructions', render: record => <ol className="instruction-history">{instructionHistory(record).map((entry, index) => <li key={index}>
+        <strong>{entry.when} · {formatTime(entry.atMs)} ({entry.atMs} ms)</strong><p>{entry.instructions || 'None supplied.'}</p>
+      </li>)}</ol> },
+      { label: 'Controller history', render: record => <>{new Set(record.results.controllerHistory.map(entry => entry.controller)).size > 1 && <strong>Mixed-controller expedition</strong>}
+        {record.results.controllerHistory.map((entry, index) => <p key={index}>{controllerLabels[entry.controller]} · {formatTime(entry.atMs)} ({entry.atMs} ms)</p>)}
+      </> },
+    ]} />
+    <ComparisonTable title="Recorded preset adherence" records={records} rows={[
+      { label: 'Separate adherence measures', render: record => <PresetAdherence record={record} /> },
+    ]} />
     <ComparisonTable title="Inference metrics" records={records} rows={[
+      { label: 'Controller decisions', render: record => record.decisions.length },
       { label: 'Local submissions', render: record => record.results.inferenceAttempts },
-      { label: 'Confirmed provider attempts', render: record => record.results.usage?.providerAttempts ?? 'Unavailable in legacy record' },
-      { label: 'Provider retries', render: record => record.results.usage?.retries ?? 'Unavailable in legacy record' },
+      { label: 'Confirmed provider attempts', render: record => record.results.usage ? `${record.results.usage.providerAttempts}${record.results.usage.unconfirmedSubmissions ? ' · lower bound' : ''}` : 'Unavailable in legacy record' },
+      { label: 'Provider retries', render: record => record.results.usage ? `${record.results.usage.retries}${record.results.usage.unconfirmedSubmissions ? ' · lower bound' : ''}` : 'Unavailable in legacy record' },
       { label: 'Unconfirmed submissions', render: record => record.results.usage?.unconfirmedSubmissions ?? 'Unavailable in legacy record' },
       { label: 'Input tokens', render: record => record.results.usage?.inputTokens ?? 'Unavailable' },
       { label: 'Output tokens', render: record => record.results.usage?.outputTokens ?? 'Unavailable' },
-      { label: 'Estimated inference cost', render: record => formatInferenceCost(record.results.usage?.estimatedCost) },
+      { label: 'Estimated inference cost', render: record => <>{formatInferenceCost(record.results.usage?.estimatedCost)}{record.results.usage?.estimatedCost === null && <p>Incomplete. Known subtotal {formatInferenceCost(record.results.usage.knownEstimatedCost)}, a lower bound excluding missing usage or prices.</p>}</> },
       { label: 'Cumulative inference wait (wall time)', render: record => `${record.results.inferenceLatencyMs.toFixed(0)} ms` },
+      { label: 'Inference allowances and acknowledgements', render: record => <InferenceLimitHistory record={record} /> },
     ]} />
+    <ComparisonTable title="Recorded provenance" records={records} rows={[
+      { label: 'Versions, models, and prices', render: record => <ControllerProvenance record={record} /> },
+    ]} />
+    <p>Baseline execution makes zero provider requests. Missing historical Jev usage is unavailable, not zero. Estimates use each run's recorded prices and do not establish verified charges.</p>
     <p>Inference latency does not consume expedition time. Inspect each expedition’s decision timeline for its returned probabilities; these are not science scores or a guarantee of correctness.</p>
   </section>;
 }

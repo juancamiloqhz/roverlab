@@ -72,6 +72,7 @@ bun test tests/mission.test.ts   # exclusive presets, shared SDK input, safe bou
 bun test tests/decisions.test.ts # instruction edits, safe reconsideration, pending decisions, and stale results
 bun test tests/decision-viewing.test.ts # inspection, teaching, held-choice validity, guards, and legacy replay
 bun test tests/interventions.test.ts # schedules, simultaneous boundaries, pauses, manual reproduction, and legacy replay
+bun test tests/matched-expeditions.test.ts # fresh keyless baselines, matched conditions, uncertain usage, and legacy replay
 bun test tests/decision-comparison.test.ts # same-input alternatives, routes, failures, immutable evidence, and legacy replay
 bun test tests/cadence.test.ts # provider request counts, coalesced triggers, resource boundaries, and legacy cadence
 bun test tests/records.test.ts # completed histories, JSON validation, reset isolation, and inference settlement
@@ -170,6 +171,8 @@ Replay executes recorded choices through the same simulator, using the original 
 Before playback starts, `createReplay(record)` validates the version 1 through 6 contract, checks that recorded simulation settings match the supported rules, and runs the history to verify every event, decision, and final result. Unsupported settings or an irreproducible history receive a clear error while the saved record remains available for inspection/export. Replay never falls back to a new live expedition. Session scenarios cover all ending conditions, baseline/TypeSafe/mixed histories, storms, instructions, recovery, cancellation/reset races, and matching outcomes at every playback speed. Browser checks cover save/import-to-replay, independent controls, unchanged JSON, rejection feedback, and TypeSafe/mixed replay with backend access blocked.
 
 ### Compare and tune expeditions
+
+Open a saved expedition and choose **Run matched baseline** to execute a fresh baseline under its supported starting conditions and recorded intervention schedule. It runs in layout A, saves separately, and makes no provider requests. After completion, choose **Compare with source expedition**. Delivered science and completion appear first, followed by condition differences, recorded preset adherence, and separate inference measures. Legacy schedules and missing usage remain explicitly incomplete. See [matched expeditions](docs/matched-expeditions.md) for version 12 provenance, supported legacy conditions, and the limits of a single comparison.
 
 Select two saved expeditions and choose **Compare selected expeditions**. The comparison identifies matching or different scenarios, simulation settings, fixed objectives, and rubrics. Storm introduction times and effects remain visible even when never detected by the rover. Initial instructions, subsequent edits, and controller transitions appear beside the results; mixed-controller expeditions are labeled explicitly. Science score, discoveries, inspections, energy, cargo, and ending conditions are separate from inference usage and wall-clock latency. **Inspect expedition** opens the recorded timeline and its actual returned probabilities.
 

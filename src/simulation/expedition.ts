@@ -12,6 +12,7 @@ import { knownStorm } from './storm';
 import { scienceRubric } from './science';
 import { validateExpeditionRecord } from '../records/contract';
 import { sameRecordData } from '../records/history';
+import { recordedSchedule } from '../records/matching';
 import type { Action, ActionCandidate, ControllerInput, Decision, DustStorm, ExpeditionController, EndingCondition, EventDetail, ExpeditionCommand, ExpeditionEvent, ExpeditionSnapshot, ExpeditionRecord, ExpeditionStartingConditions, FullWorldView, PlaybackSpeed, Position, Scenario, ScientificObjective } from './types';
 
 const STEP_MS = 100;
@@ -22,6 +23,7 @@ const RECHARGE_PER_SECOND = 5;
 const roundEnergy = (value: number) => Math.round(value * 1e9) / 1e9;
 
 type ExpeditionOptions = { interventionSchedule?: InterventionSchedule; wallNow?: () => number; scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController };
+type MatchedSource = { start: ExpeditionStartingConditions; provenance: NonNullable<ExpeditionRecord['matchedFrom']> };
 
 export function createExpedition(options: ExpeditionOptions = {}) {
   return createSimulation(options).session;
@@ -40,8 +42,9 @@ class ReplayHistory {
   }
 }
 
-function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
-  const meaningfulBoundaries = !replay || replay.source.version >= 7;
+function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory, matched?: MatchedSource) {
+  const meaningfulBoundaries = replay ? !!replay.source.startingConditions.decisionCadence
+    : matched ? !!matched.start.decisionCadence : true;
   const scenario = structuredClone(replay?.source.startingConditions.scenario ?? options.scenario ?? authoredScenario);
   const versionedSettings = !replay || replay.source.version >= 8;
   const durationMs = versionedSettings ? scenario.durationMs ?? 300_000 : 300_000;
@@ -54,8 +57,8 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     .filter(item => item.kind === 'terrain')
     .map(({ id, position, terrain, blocked, region }) => ({ id, position, terrain, blocked, ...(region ? { region } : {}) }));
   let objective = replay?.source.startingConditions.objective ?? options.objective ?? 'past-water';
-  let instructions = replay?.source.startingConditions.instructions ?? '';
-  let mission: MissionPreferences = structuredClone(replay?.source.startingConditions.mission ?? { mode: 'free-text', instructions });
+  let instructions = replay?.source.startingConditions.instructions ?? matched?.start.instructions ?? '';
+  let mission: MissionPreferences = structuredClone(replay?.source.startingConditions.mission ?? matched?.start.mission ?? { mode: 'free-text', instructions });
   const baseline: ExpeditionController = { id: 'baseline', decide: input => {
     const selected = chooseBaselineDecision(input);
     return { selectedCandidateId: selected.action.id, baseline: selected.evidence };
@@ -615,7 +618,8 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 11, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 12, id: expeditionId, completedAt: new Date().toISOString(),
+      ...(matched ? { matchedFrom: structuredClone(matched.provenance) } : {}),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();
@@ -999,6 +1003,19 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
 }
 
 export type ExpeditionSession = ReturnType<typeof createExpedition>;
+
+export function createMatchedBaseline(value: unknown): ExpeditionSession {
+  const source = validateExpeditionRecord(value);
+  // Verify execution without installing a live controller or changing the source.
+  try { createReplay(source); }
+  catch { throw new Error('Cannot run a matched baseline: the source simulation settings or history are not supported. The saved record remains available for inspection and export.'); }
+  return createSimulation({ scenario: source.startingConditions.scenario, objective: source.results.objective,
+    interventionSchedule: recordedSchedule(source) }, undefined, {
+    start: source.startingConditions,
+    provenance: { recordId: source.id, recordVersion: source.version,
+      scheduleBasis: source.matchedFrom?.scheduleBasis ?? (source.results.interventions ? 'recorded' : 'reconstructed-legacy') },
+  }).session;
+}
 
 export function createReplay(value: unknown): ExpeditionSession {
   const source = validateExpeditionRecord(value);

@@ -70,7 +70,7 @@ test('manual requests retain their times, reproduce as a schedule, and round-tri
   manual.dispatch({ type: 'set-instructions', instructions: 'Return with evidence.' });
   manual.advanceWallTime(3_000);
   const recorded = roundTrip(manual);
-  expect(recorded.version).toBe(11);
+  expect(recorded.version).toBe(12);
   expect(recorded.results.mission!.history).toMatchObject([
     { version: 0, requestedAtMs: 0, appliedAtMs: 0 },
     { version: 1, requestedAtMs: 1_000, appliedAtMs: null },

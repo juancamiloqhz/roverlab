@@ -24,7 +24,8 @@ const panels = { mission: 'Mission', evidence: 'Evidence', usage: 'Usage & recov
 type Panel = keyof typeof panels;
 
 export function App({ createSession }: { createSession?: () => ExpeditionSession } = {}) {
-  const { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, getFullWorldView } = useExpedition(createSession);
+  const { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, startMatchedBaseline, getFullWorldView } = useExpedition(createSession);
+  const [matchedSource, setMatchedSource] = useState<ExpeditionRecord | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<ExpeditionRecord | null>(null);
   const [comparison, setComparison] = useState<[ExpeditionRecord, ExpeditionRecord] | null>(null);
@@ -78,6 +79,12 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
   const openRecord = (record: ExpeditionRecord) => { pauseForInspection(); setComparison(null); setSelectedRecord(record); setPanel('records'); };
   const compareRecords = (records: [ExpeditionRecord, ExpeditionRecord]) => { pauseForInspection(); setSelectedRecord(null); setComparison(records); setPanel('records'); };
   const returnToLive = () => { setComparison(null); setSelectedRecord(null); closePanel(); };
+  const matchedResult = matchedSource && [...completedRecords].reverse().find(record => record.matchedFrom?.recordId === matchedSource.id);
+  const runMatchedBaseline = (record: ExpeditionRecord) => {
+    startMatchedBaseline(record);
+    setMatchedSource(record);
+    setPanel(null); setSelectedRecord(null); setComparison(null);
+  };
 
   return <div className={`expedition-shell${panel ? ' panel-open' : ''}${panel === 'records' ? ' records-open' : ''}`} onKeyDown={event => {
     if (event.key === 'Escape' && panel) { event.preventDefault(); closePanel(); }
@@ -125,10 +132,12 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
             <UsageSummary usage={usage} localSubmissions={snapshot.inferenceAttempts} waitMs={snapshot.inferenceLatencyMs} />
             <InferenceLimitSetup snapshot={snapshot} decisions={decisions} dispatch={dispatch} />
           </div>
-          <div hidden={panel !== 'results'}>{status === 'ended' && <ExpeditionResults snapshot={snapshot} />}<button className="secondary" onClick={() => openPanel('records')}>Browse saved expeditions</button></div>
+          <div hidden={panel !== 'results'}>{status === 'ended' && <ExpeditionResults snapshot={snapshot} />}
+            {matchedSource && matchedResult && <button className="primary" onClick={() => compareRecords([matchedSource, matchedResult])}>Compare with source expedition</button>}
+            <button className="secondary" onClick={() => openPanel('records')}>Browse saved expeditions</button></div>
           <div hidden={panel !== 'records'}>
             {comparison ? <ExpeditionComparison records={comparison} onClose={returnToLive} onOpen={openRecord} />
-              : selectedRecord ? <SavedExpeditionView key={selectedRecord.id} record={selectedRecord} onClose={returnToLive} /> : null}
+              : selectedRecord ? <SavedExpeditionView key={selectedRecord.id} record={selectedRecord} onClose={returnToLive} onRunBaseline={runMatchedBaseline} active={active} /> : null}
             <SavedExpeditions refreshingUsage={refreshingUsage} usageRefreshMessage={usageRefreshMessage} refreshInferenceUsage={refreshInferenceUsage} completedRecords={completedRecords} onOpen={openRecord} onCompare={compareRecords} />
           </div>
         </div>
@@ -142,7 +151,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
               : <button className="primary" disabled={needsRecovery} onClick={() => dispatch({ type: 'resume' })}>Resume expedition</button>)}
           {status === 'ended' && <span className="complete-label">Expedition complete</span>}
           <button className="secondary" aria-label="Stop expedition" disabled={!active} onClick={() => dispatch({ type: 'stop' })}>Stop</button>
-          <button className="secondary" aria-label="Reset expedition" onClick={() => { setPanel(null); setSelectedRecord(null); setComparison(null); dispatch({ type: 'reset' }); }}>Reset</button>
+          <button className="secondary" aria-label="Reset expedition" onClick={() => { setPanel(null); setSelectedRecord(null); setComparison(null); setMatchedSource(null); dispatch({ type: 'reset' }); }}>Reset</button>
         </div>
         <label className="teaching-control"><input type="checkbox" checked={!!snapshot.teachingMode} disabled={status === 'ended'} onChange={event => dispatch({ type: 'set-teaching-mode', enabled: event.target.checked })} />Teaching mode</label>
         <div className="execution-status"><small>CURRENT CODE ACTION</small><strong aria-label="Current action">{currentActionLabel}</strong></div>

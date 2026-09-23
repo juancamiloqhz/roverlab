@@ -147,7 +147,8 @@ const results: z.ZodType<ExpeditionSnapshot> = z.strictObject({
 });
 
 const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
-  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10), z.literal(11)]), id: z.uuid(), completedAt: z.iso.datetime(),
+  matchedFrom: z.strictObject({ recordId: z.uuid(), recordVersion: integer.min(1).max(12), scheduleBasis: z.enum(['recorded', 'reconstructed-legacy']) }).optional(),
+  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10), z.literal(11), z.literal(12)]), id: z.uuid(), completedAt: z.iso.datetime(),
   startingConditions, events: z.array(event).min(1).max(100_000), decisions: z.array(decision).max(10_000), results,
 }).refine(record => {
   const { results: final, startingConditions: start, decisions, events } = record;
@@ -215,8 +216,9 @@ const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
   const inputs = [...record.decisions.map(item => item.input), ...record.events.flatMap(event =>
     event.type === 'decision-requested' || event.type === 'decision-settled' ? [event.decision.input]
       : event.type === 'decision-made' ? [event.input] : [])];
-  return (record.version >= 7) === !!record.startingConditions.decisionCadence
-    && inputs.every(input => (record.version >= 7) === !!input.decisionBoundary);
+  const cadence = !!record.startingConditions.decisionCadence;
+  return (record.version >= 12 ? cadence || !!record.matchedFrom : (record.version >= 7) === cadence)
+    && inputs.every(input => cadence === !!input.decisionBoundary);
 }).refine(record => (record.version >= 8) === !!record.startingConditions.simulationVersion
   && (record.version >= 8 || (record.startingConditions.scenario.durationMs === undefined
     && record.startingConditions.scenario.batteryCapacity === undefined && record.startingConditions.scenario.regions === undefined)))
@@ -229,12 +231,15 @@ const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
       event.type === 'decision-requested' || event.type === 'decision-settled' ? [event.decision] : [])];
     return decisions.every(item => (record.version >= 10 && item.controller === 'typesafe') === !!item.baselineAlternative);
   })
+  .refine(record => !record.matchedFrom || (record.version >= 12 && record.matchedFrom.recordId !== record.id
+    && record.startingConditions.controller === 'baseline'
+    && (record.matchedFrom.scheduleBasis !== 'recorded' || record.matchedFrom.recordVersion >= 11)))
   .refine(hasConsistentHistory).refine(hasConsistentInterventions);
 
 export const MAX_RECORD_BYTES = 32 * 1024 * 1024;
 export function validateExpeditionRecord(value: unknown): ExpeditionRecord {
   const parsed = recordSchema.safeParse(value);
-  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, or 11 JSON export with valid history and results.');
+  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, or 12 JSON export with valid history and results.');
   return parsed.data;
 }
 export function importExpeditionRecord(json: string): ExpeditionRecord {

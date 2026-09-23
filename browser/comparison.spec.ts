@@ -43,7 +43,7 @@ test('compare saved expeditions with matching conditions and different instructi
   await library.getByRole('checkbox', { name: `Compare expedition ${records[1]!.id}`, exact: true }).check();
   await compare.click();
   const comparison = page.getByRole('region', { name: 'Expedition comparison', exact: true });
-  await expect(comparison.getByRole('status')).toHaveText('Matching starting conditions, objective, rubric, and environmental interventions.');
+  await expect(comparison.getByRole('status')).toContainText('Conditions differ');
   await expect(comparison).toContainText('Mission instruction histories differ');
   await expect(comparison).toContainText('Inspect nearby samples.');
   await expect(comparison).toContainText('Prioritize delivery.');
