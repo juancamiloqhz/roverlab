@@ -4,9 +4,9 @@ import { inferenceLimitsSchema, usagePauseSchema } from '../../shared/limits';
 import { accountingSchema, attemptEvidenceSchema, inferenceUsageSchema, submissionSchema, summarizeUsage } from '../../shared/inference';
 import { z } from 'zod';
 import { baselineEvidenceSchema } from '../../shared/baseline';
-import { hasConsistentBaselineEvidence } from './baseline';
+import { hasConsistentBaselineAlternative, hasConsistentBaselineEvidence } from './baseline';
 import { hasConsistentHistory, sameRecordData } from './history';
-import { controllerInputSchema, failureSchema, observationSchema, recordedActionSchema, validChoice, INFERENCE_LIMIT, MAX_MISSION_INSTRUCTIONS_LENGTH } from '../../shared/decisions';
+import { actionCandidateSchema, controllerInputSchema, failureSchema, observationSchema, recordedActionSchema, validChoice, INFERENCE_LIMIT, MAX_MISSION_INSTRUCTIONS_LENGTH } from '../../shared/decisions';
 import type { Decision, ExpeditionEvent, ExpeditionRecord, ExpeditionSnapshot, ExpeditionStartingConditions } from '../simulation/types';
 
 const number = z.number().finite().nonnegative();
@@ -63,6 +63,7 @@ const startingConditions: z.ZodType<ExpeditionStartingConditions> = z.strictObje
 });
 
 const decision: z.ZodType<Decision> = z.strictObject({
+  baselineAlternative: z.strictObject({ action: actionCandidateSchema, evidence: baselineEvidenceSchema }).optional(),
   baseline: baselineEvidenceSchema.optional(),
   accounting: accountingSchema.optional(),
   id: integer.positive(), controller, reason, input: controllerInputSchema,
@@ -70,7 +71,7 @@ const decision: z.ZodType<Decision> = z.strictObject({
   action: recordedActionSchema.optional(), selectedCandidateId: identity.optional(), latencyMs: number.optional(),
   inferenceAttempts: integer.max(INFERENCE_LIMIT),
   probabilities: z.record(identity, number.max(1)).optional(), confidence: number.max(1).optional(), failure: failureSchema.optional(),
-}).refine(value => !value.input.decisionBoundary || value.reason === value.input.decisionBoundary.triggers[0]).refine(hasConsistentBaselineEvidence).refine(value => {
+}).refine(value => !value.input.decisionBoundary || value.reason === value.input.decisionBoundary.triggers[0]).refine(hasConsistentBaselineEvidence).refine(hasConsistentBaselineAlternative).refine(value => {
   if (value.controller === 'baseline' && (value.probabilities || value.confidence !== undefined || value.inferenceAttempts !== 0)) return false;
   if (value.status !== 'applied') return !value.action && !value.selectedCandidateId;
   const selected = value.input.candidates.find(candidate => candidate.id === value.selectedCandidateId);
@@ -140,7 +141,7 @@ const results: z.ZodType<ExpeditionSnapshot> = z.strictObject({
 });
 
 const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
-  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9)]), id: z.uuid(), completedAt: z.iso.datetime(),
+  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10)]), id: z.uuid(), completedAt: z.iso.datetime(),
   startingConditions, events: z.array(event).min(1).max(100_000), decisions: z.array(decision).max(10_000), results,
 }).refine(record => {
   const { results: final, startingConditions: start, decisions, events } = record;
@@ -217,12 +218,17 @@ const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
     ? record.results.teachingMode !== undefined && record.results.inspectionDecisionId === null && record.results.heldDecisionId === null
     : record.results.teachingMode === undefined && record.results.inspectionDecisionId === undefined && record.results.heldDecisionId === undefined
       && record.events.every(event => !['teaching-changed', 'decision-inspected', 'inspection-ended', 'decision-held', 'held-decision-cleared'].includes(event.type)))
+  .refine(record => {
+    const decisions = [...record.decisions, ...record.events.flatMap(event =>
+      event.type === 'decision-requested' || event.type === 'decision-settled' ? [event.decision] : [])];
+    return decisions.every(item => (record.version >= 10 && item.controller === 'typesafe') === !!item.baselineAlternative);
+  })
   .refine(hasConsistentHistory);
 
 export const MAX_RECORD_BYTES = 32 * 1024 * 1024;
 export function validateExpeditionRecord(value: unknown): ExpeditionRecord {
   const parsed = recordSchema.safeParse(value);
-  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, 4, 5, 6, 7, 8, or 9 JSON export with valid history and results.');
+  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, 4, 5, 6, 7, 8, 9, or 10 JSON export with valid history and results.');
   return parsed.data;
 }
 export function importExpeditionRecord(json: string): ExpeditionRecord {

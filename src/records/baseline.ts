@@ -1,14 +1,28 @@
 import { missionPreset } from '../../shared/mission';
 import { knownStorm } from '../simulation/storm';
-import type { Decision } from '../simulation/types';
+import type { BaselineEvidence } from '../../shared/baseline';
+import { sameRecordData } from './history';
+import type { Action, ControllerInput, Decision } from '../simulation/types';
 
 // Check the recorded rule's meaning without asking any controller to choose an
 // action. These checks describe evidence-priorities-v1 and stay version-specific.
 export function hasConsistentBaselineEvidence(decision: Decision): boolean {
   const evidence = decision.baseline;
   if (!evidence) return true;
-  const { input, action, selectedCandidateId } = decision;
-  if (decision.controller !== 'baseline' || decision.status !== 'applied' || !action) return false;
+  if (decision.controller !== 'baseline' || decision.status !== 'applied' || !decision.action) return false;
+  return hasConsistentSelection(decision.input, decision.action, decision.selectedCandidateId, evidence);
+}
+
+export function hasConsistentBaselineAlternative(decision: Decision): boolean {
+  const alternative = decision.baselineAlternative;
+  if (!alternative) return true;
+  const { action, evidence } = alternative;
+  return decision.controller === 'typesafe'
+    && sameRecordData(action, decision.input.candidates.find(candidate => candidate.id === action.id))
+    && hasConsistentSelection(decision.input, action, action.id, evidence);
+}
+
+function hasConsistentSelection(input: ControllerInput, action: Action, selectedCandidateId: string | undefined, evidence: BaselineEvidence): boolean {
   const preferences = input.mission?.preferences;
   const settings = preferences?.mode === 'preset' ? preferences.preset.settings : missionPreset('balanced').settings;
   const opportunities = input.candidates.filter(candidate => ['inspect', 'collect', 'explore'].includes(candidate.kind));

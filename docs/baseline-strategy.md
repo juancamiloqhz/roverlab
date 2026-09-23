@@ -61,6 +61,14 @@ Version 6 records store this evidence in applied baseline decisions and their co
 
 Replay executes saved choices and copies saved rule evidence. It never calls a controller or recalculates choices with the current strategy. Versions 1 through 5 remain supported; missing historical baseline versions and explanations stay unavailable. `tests/fixtures/legacy-baseline-v5.json` was captured from the ticket 04 session at commit `ce564809a4e3aed7c583a916b0c8ecb8950a3c04`, before changing the controller. It contains a Conserve energy preset and the old baseline collecting a mineral specimen under the past-water objective.
 
+## Same-state decision comparisons
+
+Ticket 10 records a baseline alternative before each live Jev request. The baseline receives a detached copy of the exact recorded controller input, including its candidate routes. Its complete action and rule evidence remain separate from Jev's selected action, probabilities, and execution status. Computing the alternative makes no inference request and does not advance the simulation or change controllers.
+
+Version 10 requires the alternative on every Jev decision, including failed and discarded requests. Import validation checks complete candidate membership, baseline rule applicability, provenance, and agreement between the request, settlement, and final history. Inspection and replay use the stored alternative without running the current baseline. Records from versions 1 through 9 remain unchanged and show the alternative as unavailable. The version 9 Jev fixture was captured from session commit `f869343ab51d8a2a629dcaa6330a613c6c852a24` with a scripted choice before this change. It is regression data, not an authentic guided replay.
+
+Agreement compares the complete recorded actions, including target, duration, and route. The inspector and numbered map markers identify both choices, including waiting at the recorded rover position and recharging at base. The baseline explanation describes code rules; Jev's probabilities remain model output. Neither agreement nor disagreement establishes the outcome of an unexecuted alternative.
+
 ## Deterministic checks and limits
 
 Run `bun test tests/baseline.test.ts tests/energy.test.ts tests/storm.test.ts tests/replay.test.ts` and `bun run test:browser browser/baseline.spec.ts`. Tests drive the session API. They cover unknown properties, changed evidence and objectives, negation, relabeling, preset tradeoffs, return reserves, time pressure, multiple deliveries, recharge, storm detours and waiting, explicit continuation, validated records, and legacy replay. Physical failure scenarios use an explicitly greedy script when they need a trip this baseline now avoids. No paid inference is used.

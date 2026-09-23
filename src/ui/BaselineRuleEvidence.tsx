@@ -1,9 +1,6 @@
-import { baselineRules } from '../../shared/baseline';
-import type { Decision } from '../simulation/types';
+import { baselineRules, type BaselineEvidence } from '../../shared/baseline';
 
-export function BaselineRuleEvidence({ decision }: { decision: Decision }) {
-  if (decision.controller !== 'baseline') return null;
-  const evidence = decision.baseline;
+export function BaselineRuleEvidence({ evidence }: { evidence?: BaselineEvidence }) {
   if (!evidence) return <p>Baseline version and rule evidence are unavailable in this legacy record. Replay uses its recorded choices.</p>;
   return <div aria-label="Baseline code rule">
     <p>Baseline version: {evidence.version} · Code rule: {evidence.rule}</p>

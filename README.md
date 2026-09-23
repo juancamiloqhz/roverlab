@@ -27,7 +27,11 @@ Panels support Tab, Enter, and Escape, with focus returning to the opener when c
 
 **Teaching mode** holds each completed controller choice before its action starts. **Continue selected action** executes it once, provided it is still valid and no inspection, usage guard, or failure blocks it. A pending result can settle during inspection without resuming time. Mission edits and detected storms invalidate held choices; stop and reset clear them. Ordinary viewing continues automatically regardless of a valid choice's probability. Explanations describe planned code execution and recorded route estimates, not completed outcomes or Jev's reasoning.
 
-Version 9 records retain teaching changes, inspected decisions, held choices, continuation, and invalidation. Saved records and replay support spatial inspection without inference or changes to source exports. Replay has its own teaching control. Versions 1 through 8 remain supported under their original rules, with missing evidence shown as unavailable. Same-state baseline comparison remains ticket 10.
+Version 9 records retain teaching changes, inspected decisions, held choices, continuation, and invalidation. Saved records and replay support spatial inspection without inference or changes to source exports. Replay has its own teaching control. Versions 1 through 8 remain supported under their original rules, with missing evidence shown as unavailable.
+
+[Jev decision lab ticket 10](.scratch/jev-decision-lab/issues/10-compare-jev-and-baseline-choices-at-the-same-decision.md) adds a decision comparison. Each Jev request records the baseline's alternative from a detached copy of the same input. The card reports agreement or disagreement on the complete action, including its route. The inspector shows both numbered targets, the saved baseline version and code rule, and the free-text limitation. Map labels identify Jev and baseline choices without relying on color. Pending, failed, and obsolete Jev decisions retain the suggestion without executing it or changing the controller. A different choice does not establish a better expedition outcome.
+
+Version 10 records preserve these alternatives through local saving, validated import/export, and replay without recomputing them. Versions 1 through 9 retain their original data; absent alternatives remain unavailable. Matched-expedition outcomes remain separate work in ticket 12.
 
 ## Stack
 
@@ -65,6 +69,7 @@ bun test tests/storm.test.ts    # disclosure, sensing, crossing/detours, expiry,
 bun test tests/mission.test.ts   # exclusive presets, shared SDK input, safe boundaries, history, and legacy replay
 bun test tests/decisions.test.ts # instruction edits, safe reconsideration, pending decisions, and stale results
 bun test tests/decision-viewing.test.ts # inspection, teaching, held-choice validity, guards, and legacy replay
+bun test tests/decision-comparison.test.ts # same-input alternatives, routes, failures, immutable evidence, and legacy replay
 bun test tests/cadence.test.ts # provider request counts, coalesced triggers, resource boundaries, and legacy cadence
 bun test tests/records.test.ts # completed histories, JSON validation, reset isolation, and inference settlement
 bun test tests/replay.test.ts # recorded execution, playback independence, controller histories, and incompatible records

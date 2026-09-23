@@ -1,3 +1,4 @@
+import { DecisionComparison } from './DecisionComparison';
 import { DecisionExecution } from './DecisionExecution';
 import { MissionEvidence } from './MissionPreferences';
 import { BaselineRuleEvidence } from './BaselineRuleEvidence';
@@ -47,7 +48,8 @@ function DecisionEntry({ decision, selected, onSelect }: { decision: Decision; s
       <DecisionUsage decision={decision} />
       <p>Selected action: <strong>{decision.action ? actionName(decision.action) : 'None'}</strong></p>
       <DecisionExecution decision={decision} />
-      <BaselineRuleEvidence decision={decision} />
+      {decision.controller === 'baseline' && <BaselineRuleEvidence evidence={decision.baseline} />}
+      <DecisionComparison decision={decision} />
       <p>{scientificObjectives[input.objective]} · Instructions version {input.instructionsVersion}</p>
       {input.mission ? <MissionEvidence mission={input.mission} /> : <><p>Mission mode unavailable in this legacy record. Recorded instructions:</p><blockquote>{input.instructions || 'No mission instructions supplied.'}</blockquote></>}
       <p>Battery {input.battery.toFixed(1)} / {input.batteryCapacity} · Energy used {input.energyUsed.toFixed(1)} · Cargo {input.cargo.length} / {input.cargoCapacity} · Remaining {seconds(input.remainingMs)}</p>
@@ -60,7 +62,7 @@ function DecisionEntry({ decision, selected, onSelect }: { decision: Decision; s
         <tbody>{input.candidates.map((candidate, index) => <tr key={candidate.id} aria-label={`Target ${index + 1}${candidate.id === decision.selectedCandidateId ? ' selected' : ''}`}>
           <td>#{index + 1} · {candidate.id}</td><td>{actionName(candidate)}{candidate.kind === 'wait' ? ' · Rover position' : candidate.kind === 'recharge' ? ' · Base' : ''}</td>
           <td>{'target' in candidate ? `${candidate.routeEstimate.distanceCells} cells · ${seconds(candidate.routeEstimate.durationMs)} travel · ${candidate.routeEstimate.energy.toFixed(2)} energy${candidate.routeEstimate.stormDistanceCells !== undefined ? ` · ${candidate.routeEstimate.stormDistanceCells.toFixed(2)} cells in active storm` : ''}` : 'No travel'}</td>
-          <td>{candidate.id === decision.selectedCandidateId ? 'Selected' : '—'}</td>
+          <td>{candidate.id === decision.selectedCandidateId ? decision.controller === 'typesafe' ? 'Jev selected' : 'Selected' : ''}{candidate.id === decision.baselineAlternative?.action.id && ' · Baseline alternative'}</td>
           <td>{decision.probabilities?.[candidate.id] === undefined ? 'Unavailable' : `${(decision.probabilities[candidate.id]! * 100).toFixed(2)}%`}</td>
         </tr>)}</tbody>
       </table></div>

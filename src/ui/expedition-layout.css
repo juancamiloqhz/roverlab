@@ -171,3 +171,11 @@ body { min-width: 320px; }
 }
 @media (min-width: 1151px) { .record-panel { top: 180px; } }
 @media (min-width: 701px) and (max-width: 1150px) { .expedition-panel { top: 225px; } }
+
+.decision-comparison { border-top: 1px solid #70806c; margin-top: 16px; padding-top: 4px; }
+.decision-comparison h4 { font-size: 14px; line-height: 1.5; }
+.decision-comparison-summary { color: #e4d3a9 !important; }
+.decision-target.baseline-alternative { border-style: dashed; }
+@media (max-width: 700px) {
+  .decision-target.selected, .decision-target.baseline-alternative { max-width: 210px; white-space: normal; }
+}

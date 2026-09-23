@@ -194,6 +194,7 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
         const requested = decisions.get(settled.id);
         if (!requested || pendingId !== settled.id || settled.latencyMs === undefined
           || requested.controller !== settled.controller || requested.reason !== settled.reason
+          || !sameRecordData(requested.baselineAlternative, settled.baselineAlternative)
           || requested.inferenceAttempts !== settled.inferenceAttempts || !sameRecordData(requested.accounting, settled.accounting) || !sameRecordData(requested.input, settled.input)
           || (requested.status === 'discarded' ? settled.status !== 'discarded'
             : !invalid.has(settled.id) || !settled.failure || !['failed', 'invalid'].includes(settled.status))) return false;

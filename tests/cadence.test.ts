@@ -192,7 +192,7 @@ test('coalesced provider inputs round-trip and replay without another request', 
   const source = expedition.getCompletedRecords()[0]!;
   const json = exportExpeditionRecord(source);
   const imported = importExpeditionRecord(json);
-  expect(imported.version).toBe(9);
+  expect(imported.version).toBe(10);
   expect(imported.startingConditions.decisionCadence).toBe('meaningful-boundaries-v1');
   expect(imported.decisions[1]!.input.decisionBoundary?.triggers).toEqual(['instructions-changed', 'mission-changed']);
   for (const speed of [1, 2, 4] as const) {

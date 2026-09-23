@@ -34,12 +34,12 @@ const action = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('recharge'), durationMs: number.positive() }),
   z.strictObject({ kind: z.literal('wait'), durationMs: number.positive() }),
 ]);
-const candidate = z.discriminatedUnion('kind', [
+export const actionCandidateSchema = z.discriminatedUnion('kind', [
   action.options[0].extend({ id: identity }), action.options[1].extend({ id: identity }),
   action.options[2].extend({ id: identity }), action.options[3].extend({ id: identity }),
   action.options[4].extend({ id: identity }), action.options[5].extend({ id: identity }),
 ]);
-export const recordedActionSchema = z.union([action, candidate]);
+export const recordedActionSchema = z.union([action, actionCandidateSchema]);
 export const controllerInputSchema: z.ZodType<ControllerInput> = z.strictObject({
   decisionBoundary: decisionBoundarySchema.optional(),
   mission: missionRevisionSchema.optional(),
@@ -47,7 +47,7 @@ export const controllerInputSchema: z.ZodType<ControllerInput> = z.strictObject(
   battery: number, batteryCapacity: number.positive(), objective: z.enum(['past-water', 'unusual-minerals']),
   cargo: z.array(z.strictObject({ sampleId: identity, label: text })).max(2), cargoCapacity: number.int().positive(),
   atMs: number, position, sensorRange: number, observations: z.array(observationSchema).max(10_000),
-  memory: z.array(observationSchema).max(10_000), candidates: z.array(candidate).min(1).max(10_000),
+  memory: z.array(observationSchema).max(10_000), candidates: z.array(actionCandidateSchema).min(1).max(10_000),
   previousAction: recordedActionSchema.nullable(),
 }).refine(input => !input.mission || (input.instructions === missionInstructions(input.mission.preferences)
   && input.instructionsVersion === input.mission.version)).refine(input => new Set(input.candidates.map(item => item.id)).size === input.candidates.length);

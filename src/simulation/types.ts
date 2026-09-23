@@ -69,6 +69,7 @@ export type ExpeditionController = {
 export type ControllerHistoryEntry = { controller: ExpeditionController['id']; atMs: number; firstDecisionId: number };
 export type DecisionReason = DecisionTrigger | 'new-observations';
 export type Decision = {
+  baselineAlternative?: { action: ActionCandidate; evidence: BaselineEvidence };
   baseline?: BaselineEvidence;
   accounting?: DecisionAccounting;
   reason: DecisionReason;
@@ -211,7 +212,7 @@ export type ExpeditionStartingConditions = {
   waitMs: number; inspectMs: number; collectMs: number; cargoCapacity: number; controller: ExpeditionController['id'];
 };
 export type ExpeditionRecord = {
-  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9; id: string; completedAt: string;
+  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10; id: string; completedAt: string;
   startingConditions: ExpeditionStartingConditions;
   events: ExpeditionEvent[]; decisions: Decision[]; results: ExpeditionSnapshot;
 };

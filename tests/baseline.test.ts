@@ -137,7 +137,7 @@ test('recorded baseline rules retain their version and observed evidence through
   session.dispatch({ type: 'stop' });
   const json = exportExpeditionRecord(session.getCompletedRecords()[0]!);
   const imported = importExpeditionRecord(json);
-  expect(imported.version).toBe(9);
+  expect(imported.version).toBe(10);
   const replay = createReplay(imported);
   replay.dispatch({ type: 'start' });
   replay.advanceWallTime(6_000);

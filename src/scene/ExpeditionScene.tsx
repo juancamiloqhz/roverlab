@@ -105,7 +105,7 @@ export function ExpeditionScene({ snapshot: liveSnapshot, getFullWorldView, deci
         <label><input type="checkbox" checked={showCoverage} onChange={event => setShowCoverage(event.target.checked)} />Sensor coverage</label>
         <label><input type="checkbox" checked={!!fullWorld} disabled={historical || !getFullWorldView} onChange={event => setShowFullWorld(event.target.checked)} />Full-world debugging view</label>
       </div>
-      {decision && <p className="decision-map-context" aria-label="Decision map context">Decision {decision.id} · {formatTime(decision.input.atMs)} · {historical ? 'Recorded knowledge and rover position' : 'Recorded targets over live world'}. ◆ Selected · ○ Offered</p>}
+      {decision && <p className="decision-map-context" aria-label="Decision map context">Decision {decision.id} · {formatTime(decision.input.atMs)} · {historical ? 'Recorded knowledge and rover position' : 'Recorded targets over live world'}. ◆ {decision.controller === 'typesafe' ? 'Jev selected' : 'Selected'} · ○ Offered{decision.baselineAlternative && ' · ◇ Baseline alternative, not executed'}</p>}
       {fullWorld && <p className="debug-notice">Hidden terrain and objects revealed. Rover knowledge is unchanged.</p>}
       {showCoverage && <div className="sensor-legend">Sensor radius · <strong aria-label="Sensor coverage radius">{snapshot.sensorRange} cells</strong></div>}
       <Canvas shadows camera={{ position: [29, 27, 34], fov: 43 }} dpr={[1, 2]} fallback={<p className="webgl-fallback">A WebGL-capable browser is needed to display the planetary scene.</p>}>

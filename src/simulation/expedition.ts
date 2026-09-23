@@ -241,6 +241,12 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       observations: state.observations, memory: state.memory, candidates: availableCandidates(), previousAction,
     });
     const decision: Decision = { reason: state.reconsiderationReason ?? 'action-completed', id: decisions.length + 1, input, controller: controller.id, status: 'pending', inferenceAttempts: 0 };
+    if (controller.id === 'typesafe') {
+      if (!replay) decision.baselineAlternative = structuredClone(chooseBaselineDecision(structuredClone(input)));
+      else if (replay.next?.type === 'decision-requested' && replay.next.decision.baselineAlternative) {
+        decision.baselineAlternative = structuredClone(replay.next.decision.baselineAlternative);
+      }
+    }
     if (controller.id === 'typesafe' && (!replay || replay.source.version >= 2)) decision.accounting = { expeditionId, attempts: [] };
     state.reconsiderationReason = null;
     pendingTriggers.clear();
@@ -550,7 +556,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 9, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 10, id: expeditionId, completedAt: new Date().toISOString(),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();

@@ -5,6 +5,7 @@ import { decisionTriggers } from './DecisionTimeline';
 import { describeAction } from './describeAction';
 import { formatInferenceCost } from './InferenceUsage';
 import { formatTime } from './formatTime';
+import { DecisionComparison } from './DecisionComparison';
 import { DecisionExecution } from './DecisionExecution';
 
 export function LatestDecision({ snapshot, decisions, selectedDecision, onInspect }: {
@@ -24,6 +25,7 @@ export function LatestDecision({ snapshot, decisions, selectedDecision, onInspec
         <p>{controllerLabels[latest.controller]} · {latest.action ? 'Chose this action' : latest.status}.</p>
         <p className="choice-trigger">Trigger: {decisionTriggers(latest)}</p>
         <p>{probability === undefined ? 'Choice probability unavailable' : `${(probability * 100).toFixed(2)}% returned choice probability`}. Not science value or a guarantee of correctness.</p>
+        <DecisionComparison decision={latest} compact />
         <DecisionExecution decision={latest} />
         <div className="decision-metrics"><span>Latency: {latest.latencyMs === undefined ? 'Unavailable' : `${latest.latencyMs.toFixed(1)} ms wall time`}</span><span>Estimated inference cost: {latest.controller !== 'typesafe' ? 'No inference' : formatInferenceCost(usage?.estimatedCost)}{usage?.estimatedCost === null && ` · incomplete, known subtotal ${formatInferenceCost(usage.knownEstimatedCost)}`}</span></div>
       </> : <><h2>{snapshot.decisionPending ? 'Awaiting decision' : action.label}</h2><p>The controller chooses an action. Code handles routes, movement, resources, and delivered science.</p></>}
