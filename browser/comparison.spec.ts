@@ -1,3 +1,4 @@
+import { openPanel } from './panels';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 import { createExpedition } from '../src/simulation/expedition';
@@ -7,6 +8,7 @@ import { authoredScenario } from '../src/simulation/scenario';
 import { chooseBaselineAction } from '../src/controllers/baseline';
 
 async function importRecord(page: Page, record: ExpeditionRecord) {
+  await openPanel(page, 'Saved expeditions');
   await page.getByLabel('Import expedition JSON').setInputFiles({
     name: 'expedition.json', mimeType: 'application/json', buffer: Buffer.from(exportExpeditionRecord(record)),
   });
@@ -34,6 +36,7 @@ test('compare saved expeditions with matching conditions and different instructi
   await page.clock.fastForward(1_000);
   const library = page.getByRole('region', { name: 'Saved expeditions', exact: true });
   const compare = library.getByRole('button', { name: 'Compare selected expeditions' });
+  await openPanel(page, 'Saved expeditions');
   await expect(compare).toBeDisabled();
   await library.getByRole('checkbox', { name: `Compare expedition ${records[0]!.id}`, exact: true }).check();
   await expect(compare).toBeDisabled();
@@ -58,6 +61,7 @@ test('compare saved expeditions with matching conditions and different instructi
   await comparison.getByRole('button', { name: 'Return to live expedition' }).click();
   await expect(page.getByRole('button', { name: 'Resume expedition' })).toBeVisible();
   await expect(page.getByLabel('Remaining expedition time')).toHaveText('17:59');
+  await openPanel(page, 'Saved expeditions');
   await library.getByRole('button', { name: `Open expedition ${records[0]!.id}`, exact: true }).click();
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export expedition JSON' }).click();

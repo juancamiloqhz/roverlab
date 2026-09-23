@@ -1,3 +1,4 @@
+import { openPanel } from './panels';
 import { expect, test } from '@playwright/test';
 
 test('a keyless baseline exposes its code rule and retains it in saved history and replay', async ({ page }) => {
@@ -5,11 +6,13 @@ test('a keyless baseline exposes its code rule and retains it in saved history a
   await page.route('**/api/**', route => { requests++; return route.abort(); });
   await page.clock.install();
   await page.goto('/');
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Mission mode', exact: true }).selectOption('preset');
   await page.getByRole('button', { name: 'Start expedition' }).click();
   await page.clock.fastForward(22_000);
   await page.getByRole('button', { name: 'Pause expedition' }).click();
   const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await openPanel(page, 'Evidence');
   await timeline.locator('summary').filter({ hasText: /collect · Sample A/ }).first().click();
   await expect(timeline).toContainText('Baseline version: evidence-priorities-v1');
   await expect(timeline).toContainText('Code rule: ranked-opportunity');
@@ -21,6 +24,7 @@ test('a keyless baseline exposes its code rule and retains it in saved history a
   await page.screenshot({ path: 'test-results/baseline-rule-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Stop expedition' }).click();
   await page.reload();
+  await openPanel(page, 'Saved expeditions');
   await page.getByRole('button', { name: /^Open expedition / }).first().click();
   const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
   await saved.locator('summary').filter({ hasText: /collect · Sample A/ }).first().click();

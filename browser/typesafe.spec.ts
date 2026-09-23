@@ -1,12 +1,15 @@
+import { openPanel } from './panels';
 import { expect, test } from '@playwright/test';
 
 test('TypeSafe pending decisions keep the camera and controls responsive and show actual probabilities and usage', async ({ page, request }) => {
   await page.clock.install();
   await page.goto('/');
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
   await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Hold for browser verification');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
   await page.getByRole('button', { name: 'Start expedition' }).click();
+  await openPanel(page, 'Mission');
   await expect(page.getByRole('combobox', { name: 'Expedition controller' })).toBeDisabled();
   await expect(page.getByLabel('Current action')).toHaveText('Awaiting decision');
   const scene = page.getByRole('region', { name: 'Planetary scene' });
@@ -28,6 +31,7 @@ test('TypeSafe pending decisions keep the camera and controls responsive and sho
   await request.post('http://127.0.0.1:4174/release');
   await expect(page.getByLabel('Current action')).toContainText('Wait');
   const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await openPanel(page, 'Evidence');
   await timeline.getByText(/Decision 1 ·/).click();
   await expect(timeline).toContainText('TypeSafe controller');
   await expect(timeline.getByRole('table', { name: 'Available actions' })).toContainText('Returned probability');
@@ -41,6 +45,7 @@ test('TypeSafe pending decisions keep the camera and controls responsive and sho
 
 test('invalid TypeSafe output visibly pauses with stop and reset available and no controller switch', async ({ page }) => {
   await page.goto('/');
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
   await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Invalid choice for browser verification');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
@@ -51,6 +56,7 @@ test('invalid TypeSafe output visibly pauses with stop and reset available and n
   await expect(page.getByRole('button', { name: 'Stop expedition' })).toBeEnabled();
   await page.getByRole('button', { name: 'Reset expedition' }).click();
   await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 0');
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('baseline');
   await page.getByRole('button', { name: 'Start expedition' }).click();
   await expect(page.getByLabel('Current action')).toContainText('Explore');
@@ -58,7 +64,10 @@ test('invalid TypeSafe output visibly pauses with stop and reset available and n
 
 test('mission control retries failures, then explicitly continues with baseline and sees both controllers in results', async ({ page, request }) => {
   await page.clock.install();
+  await page.clock.pauseAt(new Date());
   await page.goto('/');
+  await page.clock.runFor(100);
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
   await page.getByRole('combobox', { name: 'Scientific objective' }).selectOption('unusual-minerals');
   const instructions = page.getByRole('textbox', { name: 'Mission instructions' });
@@ -66,32 +75,41 @@ test('mission control retries failures, then explicitly continues with baseline 
   await page.getByRole('button', { name: 'Apply instructions' }).click();
   await page.getByRole('button', { name: 'Start expedition' }).click();
   const recovery = page.getByRole('region', { name: 'Inference recovery' });
+  // Failure opens recovery automatically; clicking its tab during that transition would close it.
   await expect(recovery.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
+  await openPanel(page, 'Usage & recovery');
   await expect(recovery.getByRole('button', { name: 'Continue with the baseline controller' })).toBeEnabled();
   await page.clock.runFor(10_000);
   await expect(page.getByLabel('Remaining expedition time')).toHaveText('18:00');
+  await openPanel(page, 'Usage & recovery');
   await recovery.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 2');
   await expect(recovery).toBeVisible();
+  await openPanel(page, 'Mission');
   await instructions.fill('Hold for browser verification');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
+  await openPanel(page, 'Usage & recovery');
   await recovery.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByLabel('Current action')).toHaveText('Awaiting decision');
   await expect(recovery).toHaveCount(0);
   await request.post('http://127.0.0.1:4174/release');
   await expect(page.getByLabel('Current action')).toContainText('Wait');
   await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 3');
+  await openPanel(page, 'Mission');
   await instructions.fill('Invalid choice for browser verification');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
   await page.clock.runFor(5_000);
   await expect(recovery).toBeVisible();
   await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 4');
+  await openPanel(page, 'Usage & recovery');
   await recovery.getByRole('button', { name: 'Continue with the baseline controller' }).click();
   await expect(page.getByLabel('Current action')).toContainText('Explore');
   await expect(page.getByLabel('Remaining expedition time')).toHaveText('17:55');
+  await openPanel(page, 'Mission');
   await expect(page.getByRole('combobox', { name: 'Scientific objective' })).toHaveValue('unusual-minerals');
   await expect(page.getByRole('combobox', { name: 'Scientific objective' })).toBeDisabled();
   const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await openPanel(page, 'Evidence');
   await expect(timeline.getByRole('listitem').nth(4)).toContainText('TypeSafe controller → Baseline controller');
   await expect(timeline.getByRole('listitem').nth(5)).toContainText('Decision 5');
   await timeline.getByText(/Decision 5 ·/).click();
@@ -103,6 +121,7 @@ test('mission control retries failures, then explicitly continues with baseline 
   await expect(recovery).toHaveCount(0);
   await page.screenshot({ path: 'test-results/typesafe-recovery.png', fullPage: true });
   await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await openPanel(page, 'Evidence');
   await expect(timeline).not.toContainText('TypeSafe controller → Baseline controller');
   await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 0');
 });

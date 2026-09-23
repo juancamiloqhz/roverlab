@@ -1,3 +1,4 @@
+import { openPanel } from './panels';
 import { expect, test } from '@playwright/test';
 
 test('mission control watches a 3D baseline expedition, orbits while paused, and finishes', async ({ page }) => {
@@ -84,15 +85,19 @@ test('mission control selects objectives, sees inspection and cargo, and scores 
   await page.goto('/');
   const objective = page.getByRole('combobox', { name: 'Scientific objective' });
   for (const [value, sample] of [['past-water', 'A'], ['unusual-minerals', 'B']] as const) {
+    await openPanel(page, 'Mission');
     await objective.selectOption(value!);
     await page.getByRole('button', { name: 'Start expedition' }).click();
+    await openPanel(page, 'Mission');
     await expect(objective).toBeDisabled();
     await page.clock.fastForward(17_000);
     await expect(page.getByLabel('Current action')).toContainText('Inspect · Sample A');
-    await expect(page.getByText('Properties unknown · Inspection required')).toBeVisible();
+    await openPanel(page, 'Evidence');
+    await expect(page.getByRole('region', { name: 'Discovery progress' }).getByText('Properties unknown · Inspection required')).toBeVisible();
     await expect(page.getByLabel('Samples inspected')).toHaveText('0');
     await page.clock.fastForward(6_000);
-    await expect(page.getByText(/Layered sediment/)).toBeVisible();
+    await openPanel(page, 'Evidence');
+    await expect(page.getByRole('region', { name: 'Discovery progress' }).getByText(/Layered sediment/)).toBeVisible();
     await expect(page.getByLabel('Samples inspected')).toHaveText('1');
     if (value === 'unusual-minerals') {
       await expect(page.getByLabel('Current action')).toContainText('Explore');
@@ -112,9 +117,11 @@ test('mission control selects objectives, sees inspection and cargo, and scores 
     await expect(page.getByLabel(`Sample ${sample} observation`)).toContainText('Delivered');
     await page.getByRole('button', { name: 'Stop expedition' }).click();
     await expect(page.getByRole('region', { name: 'Expedition results' })).toContainText('10 science points');
+    await openPanel(page, 'Mission');
     await expect(objective).toBeDisabled();
     await page.screenshot({ path: `test-results/science-${value}.png`, fullPage: true });
     await page.getByRole('button', { name: 'Reset expedition' }).click();
+    await openPanel(page, 'Mission');
     await expect(objective).toBeEnabled();
     await expect(page.getByLabel('Science score', { exact: true })).toHaveText('0');
     await expect(page.getByLabel('Samples inspected')).toHaveText('0');
@@ -157,10 +164,12 @@ test('mission control edits instructions and inspects the baseline decision time
   await page.clock.install();
   await page.goto('/');
   const instructions = page.getByRole('textbox', { name: 'Mission instructions' });
+  await openPanel(page, 'Mission');
   await instructions.fill('Prioritize evidence of past water.');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
   await page.getByRole('button', { name: 'Start expedition' }).click();
   const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await openPanel(page, 'Evidence');
   await timeline.getByText(/Decision 1 ·/).click();
   await expect(timeline).toContainText('Prioritize evidence of past water.');
   await expect(timeline).toContainText('Baseline controller');
@@ -170,6 +179,7 @@ test('mission control edits instructions and inspects the baseline decision time
   await expect(timeline.getByRole('table', { name: 'Rover memory used' })).toContainText('Base');
   await page.clock.runFor(1_000);
   await page.getByRole('button', { name: 'Pause expedition' }).click();
+  await openPanel(page, 'Mission');
   await instructions.fill('Preserve energy for the return.');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
   await expect(page.getByRole('combobox', { name: 'Scientific objective' })).toBeDisabled();
@@ -177,13 +187,16 @@ test('mission control edits instructions and inspects the baseline decision time
   await page.getByRole('button', { name: 'Resume expedition' }).click();
   await page.clock.runFor(3_000);
   await page.getByRole('button', { name: 'Pause expedition' }).click();
+  await openPanel(page, 'Evidence');
   await timeline.getByText(/Decision 2 ·/).click();
   await expect(timeline.getByLabel('Decision 2 details')).toContainText('Preserve energy for the return.');
   await expect(timeline.getByLabel('Decision 1 details')).toContainText('Prioritize evidence of past water.');
   await expect(timeline.getByLabel('Decision 2 details')).toContainText('Instructions changed');
   await page.screenshot({ path: 'test-results/decisions.png', fullPage: true });
   await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await openPanel(page, 'Evidence');
   await expect(timeline).toContainText('Decisions will appear');
+  await openPanel(page, 'Mission');
   await expect(instructions).toHaveValue('Preserve energy for the return.');
 });
 
@@ -192,7 +205,7 @@ test('a pending scripted decision freezes time while camera and mission controls
   await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z'));
   // Substitute the controller only in this browser verification. The real UI and
   // expedition coordinator still own the timer, controls, and decision lifecycle.
-  await page.route('**/src/main.tsx', route => route.fulfill({ contentType: 'text/javascript', body: `
+  await page.route(/\/src\/main\.tsx(?:\?.*)?$/, route => route.fulfill({ contentType: 'text/javascript', body: `
     import React from '/node_modules/.vite/deps/react.js';
     import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
     import { App } from '/src/ui/App.tsx';
@@ -214,6 +227,7 @@ test('a pending scripted decision freezes time while camera and mission controls
   await page.mouse.up();
   await page.clock.runFor(300);
   expect(await scene.screenshot()).not.toEqual(beforeOrbit);
+  await openPanel(page, 'Mission');
   await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Preserve energy.');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
   await page.getByRole('button', { name: '2×', exact: true }).click();

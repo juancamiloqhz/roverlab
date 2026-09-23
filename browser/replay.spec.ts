@@ -1,3 +1,4 @@
+import { openPanel } from './panels';
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 
@@ -8,10 +9,12 @@ test('saved and imported expeditions replay with independent controls and unchan
   await page.goto('/');
   await page.getByRole('button', { name: 'Start expedition' }).click();
   await page.clock.fastForward(90_000);
+  await openPanel(page, 'Mission');
   await page.getByRole('button', { name: 'Introduce dust storm' }).click();
   await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Avoid costly crossings.');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
   await page.clock.fastForward(990_000);
+  await openPanel(page, 'Saved expeditions');
   await page.getByRole('button', { name: /Open expedition/ }).click();
   const results = await page.getByRole('region', { name: 'Expedition results' }).textContent();
   const download = page.waitForEvent('download');
@@ -40,6 +43,7 @@ test('saved and imported expeditions replay with independent controls and unchan
   await expect(replay.getByRole('status')).toHaveText('Replay complete');
   await expect(replay.getByLabel('Replay science score')).toHaveText(String(source.results.scienceScore));
   await expect(page.getByRole('region', { name: 'Expedition results' })).toHaveText(results!);
+  await openPanel(page, 'Saved expeditions');
   await expect(page.getByRole('button', { name: /Open expedition/ })).toHaveCount(1);
 
   const context = await browser.newContext({ baseURL: 'http://127.0.0.1:4173' });
@@ -49,6 +53,7 @@ test('saved and imported expeditions replay with independent controls and unchan
   await viewer.route('**/api/**', route => { inferenceRequests++; return route.abort(); });
   await viewer.goto('/');
   const file = { name: 'expedition.json', mimeType: 'application/json', buffer: Buffer.from(json) };
+  await openPanel(viewer, 'Saved expeditions');
   await viewer.getByLabel('Import expedition JSON').setInputFiles(file);
   await viewer.getByRole('button', { name: 'Replay expedition', exact: true }).click();
   await viewer.clock.fastForward(5_000);
@@ -65,6 +70,7 @@ test('saved and imported expeditions replay with independent controls and unchan
   await expect(viewer.getByRole('region', { name: 'Expedition results' })).toHaveText(results!);
 
   const unsupported = { ...source, id: crypto.randomUUID(), startingConditions: { ...source.startingConditions, fixedStepMs: 50 } };
+  await openPanel(viewer, 'Saved expeditions');
   await viewer.getByLabel('Import expedition JSON').setInputFiles({ ...file, buffer: Buffer.from(JSON.stringify(unsupported)) });
   await viewer.getByRole('button', { name: 'Replay expedition', exact: true }).click();
   await expect(viewer.getByRole('alert')).toContainText('Cannot replay this expedition');

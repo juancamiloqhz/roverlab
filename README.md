@@ -15,6 +15,14 @@ A local 3D sandbox with one rover, a 42 × 38 authored area, a charging base, tw
 
 [Jev decision lab ticket 07](.scratch/jev-decision-lab/issues/07-explore-a-larger-world-over-longer-expeditions.md) adds the expanded world and version 8 records with explicit simulation settings. Saved versions 1 through 7 retain their original five-minute conditions. A deterministic survey delivers five samples in three trips, while skipping recharge can strand the rover. See [world parameters and measured outcomes](docs/expanded-world.md).
 
+### Fullscreen expedition workspace
+
+[Jev decision lab ticket 08](.scratch/jev-decision-lab/issues/08-use-fullscreen-expedition-layout-a.md) implements the selected Expedition layout A with real session data. The world fills the window beneath persistent live resources, provider attempts, and estimated inference cost. The latest completed choice shows its controller, trigger, returned probability, wall-time latency, and estimate. Pending decisions retain the previous choice as labeled history. Code execution appears separately from controller choice.
+
+Open **Mission**, **Evidence**, **Usage & recovery**, or **Saved expeditions** for the existing controls and records. **Inspect decisions** pauses the live expedition; closing a panel does not resume it. Usage pauses and failures open their recovery controls, and **Review recovery** reopens them. Completed expeditions open **Results** and still save automatically even when the records panel is closed. Saved inspection, replay, and comparison identify historical usage; the top telemetry continues to identify the live expedition.
+
+Panels support Tab, Enter, and Escape, with focus returning to the opener when closed. On narrow screens, panels scroll above the persistent pause, stop, reset, and speed controls. Orbit, follow, sensor coverage, and full-world debugging remain available. **Fullscreen** requests browser fullscreen only on a click; unavailable or rejected requests leave the normal window usable. Spatial decision selection and teaching mode remain later work.
+
 ## Stack
 
 - React, TypeScript, and Vite for the browser application.

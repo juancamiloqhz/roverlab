@@ -1,3 +1,4 @@
+import { openPanel } from './panels';
 import { expect, test } from '@playwright/test';
 
 test('mission control introduces a hidden storm, observes detection, and freezes its visible duration while orbiting', async ({ page }) => {
@@ -6,6 +7,7 @@ test('mission control introduces a hidden storm, observes detection, and freezes
   await page.clock.install();
   await page.goto('/');
   const introduce = page.getByRole('button', { name: 'Introduce dust storm' });
+  await openPanel(page, 'Mission');
   await expect(introduce).toBeEnabled({ timeout: 1_000 });
   await introduce.click();
   const panel = page.getByRole('region', { name: 'Dust storm controls' });
@@ -15,11 +17,13 @@ test('mission control introduces a hidden storm, observes detection, and freezes
   await expect(page.getByLabel('Storm time remaining')).toHaveCount(0);
   await expect(introduce).toBeDisabled();
   await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await openPanel(page, 'Mission');
   await expect(introduce).toBeEnabled();
   await page.getByRole('combobox', { name: 'Scientific objective' }).selectOption('unusual-minerals');
   await page.getByRole('button', { name: 'Start expedition' }).click();
   await page.clock.fastForward(90_000);
   await page.getByRole('button', { name: 'Pause expedition' }).click();
+  await openPanel(page, 'Mission');
   await introduce.click();
   await expect(panel).toContainText('Detected');
   await expect(scene.getByText(/Dust storm/)).toBeVisible();
@@ -38,13 +42,16 @@ test('mission control introduces a hidden storm, observes detection, and freezes
   await page.clock.fastForward(5_000);
   await page.getByRole('button', { name: 'Pause expedition' }).click();
   const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await openPanel(page, 'Evidence');
   await timeline.locator('summary').last().click();
   await expect(timeline).toContainText('Dust storm');
   await page.getByRole('button', { name: 'Resume expedition' }).click();
   await page.clock.fastForward(41_000);
+  await openPanel(page, 'Mission');
   await expect(panel).toContainText('Known dust storm expired');
   await expect(scene.getByText(/Dust storm/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await openPanel(page, 'Mission');
   await expect(introduce).toBeEnabled();
   await expect(panel).not.toContainText('Detected');
   expect(errors).toEqual([]);

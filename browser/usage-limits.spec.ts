@@ -1,10 +1,14 @@
+import { openPanel } from './panels';
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
 test('mission control configures allowances, raises a reached limit, and preserves the history in keyless replay', async ({ page }) => {
+  test.setTimeout(60_000); // Includes reload, JSON round-trip, and rendered replay.
   await page.clock.install();
   await page.goto('/');
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
+  await openPanel(page, 'Usage & recovery');
   await expect(page.getByRole('spinbutton', { name: 'Provider-attempt limit', exact: true })).toHaveValue('250');
   await expect(page.getByRole('spinbutton', { name: 'Estimated-cost limit in USD', exact: true })).toHaveValue('0.1');
   await page.getByRole('spinbutton', { name: 'Provider-attempt limit', exact: true }).fill('1');
@@ -20,18 +24,23 @@ test('mission control configures allowances, raises a reached limit, and preserv
   const time = await page.getByLabel('Remaining expedition time').textContent();
   await page.clock.runFor(10_000);
   await expect(page.getByLabel('Remaining expedition time')).toHaveText(time!);
+  await openPanel(page, 'Usage & recovery');
   await page.getByRole('spinbutton', { name: 'Provider-attempt limit', exact: true }).fill('2');
   await page.getByRole('button', { name: 'Apply inference limits' }).click();
   await page.getByRole('button', { name: 'Continue Jev inference' }).click();
   await page.clock.runFor(5000);
+  await openPanel(page, 'Usage & recovery');
   await expect(pause).toContainText('Provider-attempt limit reached');
   await expect(page.getByLabel('Inference usage', { exact: true })).toContainText('Confirmed provider attempts: 2');
   await page.getByRole('button', { name: 'Continue with the baseline controller' }).click();
   await page.clock.runFor(5000);
+  await openPanel(page, 'Evidence');
   await expect(page.getByRole('region', { name: 'Decision timeline' })).toContainText('TypeSafe controller → Baseline controller');
   await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await openPanel(page, 'Saved expeditions');
   await expect(page.getByText('Saved in this browser', { exact: true })).toBeVisible();
   await page.reload();
+  await openPanel(page, 'Saved expeditions');
   await page.getByRole('button', { name: /Open expedition/ }).click();
   const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
   await expect(saved).toContainText('Provider-attempt allowance: 2');
@@ -52,6 +61,7 @@ test('mission control configures allowances, raises a reached limit, and preserv
 test('uncertainty controls identify attempts, persist after acknowledgement, and ask again for new unknown usage', async ({ page }) => {
   await page.clock.install();
   await page.goto('/');
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
   await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Unknown pricing for browser verification');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
@@ -59,6 +69,7 @@ test('uncertainty controls identify attempts, persist after acknowledgement, and
   const pause = page.getByRole('region', { name: 'Inference usage pause' });
   await expect(pause).toContainText('Usage or pricing is unknown');
   await expect(pause).toContainText('Decision 1');
+  await openPanel(page, 'Usage & recovery');
   await page.getByRole('button', { name: 'Acknowledge listed uncertainty and continue' }).click();
   await expect(pause).toBeHidden();
   await expect(page.getByLabel('Inference usage', { exact: true })).toContainText('Unavailable · incomplete');
@@ -66,16 +77,23 @@ test('uncertainty controls identify attempts, persist after acknowledgement, and
   await page.clock.runFor(5000);
   await expect(pause).toContainText('Decision 2');
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByLabel('Decision phase', { exact: true })).toHaveText('Usage paused');
+  await expect(page.getByLabel('Live estimated inference cost')).toContainText('Unavailable · incomplete');
+  await page.getByRole('button', { name: 'Follow rover', exact: true }).click();
+  await page.getByRole('button', { name: 'Orbit camera', exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/jev-usage-pause-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await openPanel(page, 'Saved expeditions');
   await expect(page.getByText('Saved in this browser', { exact: true })).toBeVisible();
 });
 
 test('estimated-cost pauses explain threshold crossing and offer the cost-specific control', async ({ page }) => {
   await page.clock.install();
   await page.goto('/');
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
+  await openPanel(page, 'Usage & recovery');
   await page.getByRole('spinbutton', { name: 'Estimated-cost limit in USD', exact: true }).fill('0.00004');
   await page.getByRole('button', { name: 'Apply inference limits' }).click();
   await page.getByRole('button', { name: 'Start expedition' }).click();
@@ -83,6 +101,7 @@ test('estimated-cost pauses explain threshold crossing and offer the cost-specif
   await expect(pause).toContainText('Estimated-cost threshold reached');
   await expect(pause).toContainText('A completed response may cross this threshold');
   await expect(page.getByLabel('Inference usage', { exact: true })).toContainText('$0.00004200 USD');
+  await openPanel(page, 'Usage & recovery');
   await expect(page.getByRole('spinbutton', { name: 'Estimated-cost limit in USD', exact: true })).toBeEnabled();
 });
 
@@ -91,11 +110,15 @@ test('baseline takeover is visible even when a zero allowance prevented the firs
   await page.goto('/');
   let requests = 0;
   await page.route('**/api/decision', route => { requests++; return route.abort(); });
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
+  await openPanel(page, 'Usage & recovery');
   await page.getByRole('spinbutton', { name: 'Provider-attempt limit', exact: true }).fill('0');
   await page.getByRole('button', { name: 'Apply inference limits' }).click();
   await page.getByRole('button', { name: 'Start expedition' }).click();
+  await expect(page.getByRole('region', { name: 'Inference usage pause' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue with the baseline controller' }).click();
+  await openPanel(page, 'Evidence');
   await expect(page.getByRole('region', { name: 'Decision timeline' })).toContainText('TypeSafe controller → Baseline controller');
   await expect(page.getByLabel('Current action')).toContainText('Explore');
   expect(requests).toBe(0);

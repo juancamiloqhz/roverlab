@@ -1,9 +1,11 @@
+import { openPanel } from './panels';
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
 test('Jev usage exposes token-derived estimates and retains its pricing through save and replay', async ({ page }) => {
   await page.clock.install();
   await page.goto('/');
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
   await page.getByRole('button', { name: 'Start expedition' }).click();
   const usage = page.getByLabel('Inference usage', { exact: true });
@@ -11,6 +13,7 @@ test('Jev usage exposes token-derived estimates and retains its pricing through 
   await expect(usage).toContainText('Local submissions: 1');
   await expect(usage).toContainText('Estimated inference cost: $0.00004200 USD');
   const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await openPanel(page, 'Evidence');
   await timeline.getByText(/Decision 1 ·/).click();
   await expect(timeline).toContainText('Input tokens: 1000');
   await expect(timeline).toContainText('Output tokens: 40');
@@ -23,8 +26,10 @@ test('Jev usage exposes token-derived estimates and retains its pricing through 
   await page.screenshot({ path: 'test-results/jev-usage-mobile.png', fullPage: true });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await openPanel(page, 'Saved expeditions');
   await expect(page.getByText('Saved in this browser', { exact: true })).toBeVisible();
   await page.reload();
+  await openPanel(page, 'Saved expeditions');
   await page.getByRole('button', { name: /Open expedition/ }).click();
   const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
   await expect(saved).toContainText('Estimated inference cost: $0.00004200 USD');
@@ -39,6 +44,7 @@ test('Jev usage exposes token-derived estimates and retains its pricing through 
 test('legacy usage is unavailable while its local counter remains visible', async ({ page }) => {
   await page.goto('/');
   const json = await readFile(new URL('../tests/fixtures/legacy-usage-v1.json', import.meta.url));
+  await openPanel(page, 'Saved expeditions');
   await page.getByLabel('Import expedition JSON').setInputFiles({ name: 'legacy.json', mimeType: 'application/json', buffer: json });
   const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
   await expect(saved).toContainText('Legacy local submissions: 1');
@@ -51,6 +57,7 @@ test('legacy usage is unavailable while its local counter remains visible', asyn
 test('unknown model pricing remains visibly incomplete without guessing a price', async ({ page }) => {
   await page.clock.install();
   await page.goto('/');
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
   await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Unknown pricing for browser verification');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
@@ -60,6 +67,7 @@ test('unknown model pricing remains visibly incomplete without guessing a price'
   await expect(usage).toContainText('Input tokens: 1000');
   await expect(usage).toContainText('Estimated inference cost: Unavailable · incomplete');
   await expect(usage).toContainText('Known estimated inference cost subtotal: $0.00000000 USD');
+  await openPanel(page, 'Evidence');
   await page.getByRole('region', { name: 'Decision timeline' }).getByText(/Decision 1 ·/).click();
   await expect(page.getByLabel('Decision usage', { exact: true })).toContainText('Resolved model: jev-future');
   await expect(page.getByLabel('Decision usage', { exact: true })).toContainText('Pricing basis: Unavailable');
@@ -75,14 +83,19 @@ test('lost local responses reconcile after stop and reset, save once, and replay
     await route.fetch();
     await route.abort('failed');
   });
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
   await page.getByRole('button', { name: 'Start expedition' }).click();
   const usage = page.getByLabel('Inference usage', { exact: true });
   await expect(usage).toContainText('Unconfirmed submissions: 1');
+  await expect(page.getByLabel('Live provider attempts')).toHaveText('0 confirmed · lower bound');
+  await expect(page.getByLabel('Live estimated inference cost')).toContainText('Unavailable · incomplete');
   await expect(usage).toContainText('lower bound');
   await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await openPanel(page, 'Saved expeditions');
   await expect(page.getByText('Saved in this browser', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Reset expedition' }).click();
+  await openPanel(page, 'Saved expeditions');
   await page.getByRole('button', { name: 'Refresh inference accounting' }).click();
   await expect(page.getByText('Accounting refresh complete.', { exact: false })).toBeVisible();
   await expect(usage).toContainText('Local submissions: 0');
@@ -92,6 +105,7 @@ test('lost local responses reconcile after stop and reset, save once, and replay
   expect(submissions).toBe(1);
   await expect(page.getByText('Saved in this browser', { exact: true })).toBeVisible();
   await page.reload();
+  await openPanel(page, 'Saved expeditions');
   await page.getByRole('button', { name: /Open expedition/ }).click();
   const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
   await expect(saved).toContainText('Confirmed provider attempts: 1');

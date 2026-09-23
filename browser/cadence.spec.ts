@@ -1,8 +1,12 @@
+import { openPanel } from './panels';
 import { expect, test } from '@playwright/test';
 
 test('choosing, executing and paused phases display recorded triggers through saving and replay', async ({ page, request }) => {
   await page.clock.install();
+  await page.clock.pauseAt(new Date());
   await page.goto('/');
+  await page.clock.runFor(100);
+  await openPanel(page, 'Mission');
   await page.getByRole('combobox', { name: 'Expedition controller' }).selectOption('typesafe');
   await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Hold for browser verification');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
@@ -10,23 +14,27 @@ test('choosing, executing and paused phases display recorded triggers through sa
   const phase = page.getByLabel('Decision phase', { exact: true });
   await expect(phase).toHaveText('Jev choosing');
   const timeline = page.getByRole('region', { name: 'Decision timeline' });
+  await openPanel(page, 'Evidence');
   await expect(timeline.locator('summary').first()).toContainText('Expedition started');
   await page.clock.runFor(1_000);
   await expect(page.getByLabel('Remaining expedition time')).toHaveText('18:00');
   await request.post('http://127.0.0.1:4174/release');
   await expect(phase).toHaveText('Code executing');
   await expect(page.getByLabel('Current action')).toContainText('Wait');
+  await openPanel(page, 'Mission');
   await page.getByRole('textbox', { name: 'Mission instructions' }).fill('Inspect the evidence');
   await page.getByRole('button', { name: 'Apply instructions' }).click();
   await page.getByRole('combobox', { name: 'Mission mode', exact: true }).selectOption('preset');
   await page.clock.runFor(5_000);
   await expect(page.getByLabel('Inference usage')).toContainText('Local submissions: 2');
+  await openPanel(page, 'Evidence');
   await expect(timeline.locator('summary').nth(1)).toContainText('Instructions changed · Mission priorities changed · Action completed');
   await page.getByRole('button', { name: 'Pause expedition' }).click();
   await expect(phase).toHaveText('Paused');
   await page.clock.runFor(10_000);
   await expect(page.getByLabel('Remaining expedition time')).toHaveText('17:55');
   await page.getByRole('button', { name: 'Stop expedition' }).click();
+  await openPanel(page, 'Saved expeditions');
   await page.getByRole('button', { name: /^Open expedition / }).first().click();
   const saved = page.getByRole('region', { name: 'Saved expedition', exact: true });
   await saved.getByText(/Decision 2 ·/).click();

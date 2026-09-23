@@ -1,3 +1,4 @@
+import { openPanel } from './panels';
 import { expect, test } from '@playwright/test';
 import type { ExpeditionSession } from '../src/simulation/expedition';
 
@@ -21,7 +22,7 @@ test('observation controls reveal only the debug scene and preserve controller i
   page.on('pageerror', error => errors.push(error.message));
   await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
   await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z'));
-  await page.route('**/src/main.tsx', route => route.fulfill({ contentType: 'text/javascript', body: appEntry }));
+  await page.route(/\/src\/main\.tsx(?:\?.*)?$/, route => route.fulfill({ contentType: 'text/javascript', body: appEntry }));
   await page.goto('/');
   await page.clock.runFor(100);
   const scene = page.getByRole('region', { name: 'Planetary scene' });
@@ -40,6 +41,7 @@ test('observation controls reveal only the debug scene and preserve controller i
   for (const label of ['A', 'B', 'C']) await expect(scene.getByText(`Sample ${label} · Hidden from rover`, { exact: true })).toBeVisible();
   await expect(page.getByLabel('Samples discovered')).toHaveText('0');
   await expect(page.getByLabel('Terrain discovered')).toHaveText('29 / 1596 cells');
+  await openPanel(page, 'Mission');
   await page.getByRole('button', { name: 'Introduce dust storm' }).click();
   await page.evaluate(() => (window as unknown as SessionWindow).reference.dispatch({ type: 'introduce-storm' }));
   await page.clock.runFor(100);
@@ -171,7 +173,7 @@ test('follow keeps the moving rover in view, supports paused inspection, and res
 test('sensor coverage follows storm range changes and observation controls stay responsive during a pending decision', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
   await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z'));
-  await page.route('**/src/main.tsx', route => route.fulfill({ contentType: 'text/javascript', body: `
+  await page.route(/\/src\/main\.tsx(?:\?.*)?$/, route => route.fulfill({ contentType: 'text/javascript', body: `
     import React from '/node_modules/.vite/deps/react.js';
     import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
     import { App } from '/src/ui/App.tsx';
@@ -191,6 +193,7 @@ test('sensor coverage follows storm range changes and observation controls stay 
   await page.getByRole('button', { name: 'Follow rover', exact: true }).click();
   await page.clock.runFor(100);
   await expect(scene.getByLabel('Sensor coverage radius')).toHaveText('3 cells');
+  await openPanel(page, 'Mission');
   await page.getByRole('button', { name: 'Introduce dust storm' }).click();
   await page.getByRole('button', { name: 'Start expedition' }).click();
   await expect(page.getByLabel('Current action')).toHaveText('Awaiting decision');

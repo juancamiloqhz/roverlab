@@ -1,99 +1,108 @@
+import { useEffect, useRef, useState } from 'react';
+import type { ExpeditionSession } from '../simulation/expedition';
+import type { ExpeditionRecord } from '../simulation/types';
+import { ExpeditionScene } from '../scene/ExpeditionScene';
+import { failureMessages } from '../../shared/decisions';
 import { InferenceLimitSetup, InferenceUsagePause } from './InferenceLimits';
-import { UsageSummary } from './InferenceUsage';
-import { useState } from 'react';
+import { formatInferenceCost, UsageSummary } from './InferenceUsage';
 import { ExpeditionResults } from './ExpeditionResults';
 import { ExpeditionComparison } from './ExpeditionComparison';
 import { SavedExpeditions, SavedExpeditionView } from './SavedExpeditions';
-import { formatTime } from './formatTime';
-import type { ExpeditionSession } from '../simulation/expedition';
-import { ExpeditionScene } from '../scene/ExpeditionScene';
-import { scientificObjectives } from '../simulation/science';
-import type { Action, ExpeditionSnapshot, ExpeditionRecord, ScientificObjective } from '../simulation/types';
 import { DecisionTimeline } from './DecisionTimeline';
-import { StormControl } from './StormControl';
-import { MissionInstructions } from './MissionInstructions';
+import { FullscreenButton } from './FullscreenButton';
+import { LatestDecision } from './LatestDecision';
+import { MissionControl } from './MissionControl';
+import { RoverEvidence } from './RoverEvidence';
+import { describeAction } from './describeAction';
+import { formatTime } from './formatTime';
 import { useExpedition } from './useExpedition';
-import './styles.css';
-import { failureMessages } from '../../shared/decisions';
 import { controllerLabels } from './controllerLabels';
+import './styles.css';
+import './expedition-layout.css';
 
-function describeAction(action: Action | null, status: ExpeditionSnapshot['status']) {
-  switch (action?.kind) {
-    case 'explore': return {
-      label: `Explore · ${action.target.label}`, description: 'Following a grid route to the next target.',
-    };
-    case 'inspect': return {
-      label: `Inspect · ${action.target.label}`, description: 'Travel to the sample, then examine it for six seconds to reveal its properties.',
-    };
-    case 'collect': return {
-      label: `Collect · ${action.target.label}`, description: 'Travel to the sample, then spend four seconds collecting it into cargo.',
-    };
-    case 'return-to-base': return {
-      label: 'Return to base', description: 'Travel to base. Cargo unloads automatically; recharging is a separate action.',
-    };
-    case 'recharge': return {
-      label: 'Recharge at base', description: 'Replenishing the battery. Expedition time continues; accumulated energy use is preserved.',
-    };
-    case 'wait': return {
-      label: `Wait · ${action.durationMs / 1_000} seconds`, description: 'A bounded pause. Expedition time continues.',
-    };
-    default: return status === 'ended'
-      ? { label: 'Expedition ended', description: 'Reset to explore the same starting area again.' }
-      : { label: 'Awaiting start', description: 'Start when you’re ready. The baseline needs no API key.' };
-  }
-}
+const panels = { mission: 'Mission', evidence: 'Evidence', usage: 'Usage & recovery', records: 'Saved expeditions', results: 'Results' };
+type Panel = keyof typeof panels;
 
 export function App({ createSession }: { createSession?: () => ExpeditionSession } = {}) {
   const { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, getFullWorldView } = useExpedition(createSession);
+  const [panel, setPanel] = useState<Panel | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<ExpeditionRecord | null>(null);
   const [comparison, setComparison] = useState<[ExpeditionRecord, ExpeditionRecord] | null>(null);
-  const openRecord = (record: ExpeditionRecord) => { pauseForInspection(); setComparison(null); setSelectedRecord(record); window.scrollTo({ top: 0, behavior: 'instant' }); };
-  const compareRecords = (records: [ExpeditionRecord, ExpeditionRecord]) => { pauseForInspection(); setSelectedRecord(null); setComparison(records); window.scrollTo({ top: 0, behavior: 'instant' }); };
-  const { status, currentAction, rover } = snapshot;
-  const controllerLabel = controllerLabels[snapshot.controller];
-  const knownCells = snapshot.memory.filter(item => item.kind === 'terrain').length;
-  const samples = snapshot.memory.filter(item => item.kind === 'sample');
-  const currentIds = new Set(snapshot.observations.map(item => item.id));
+  const invoker = useRef<HTMLElement | null>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const panelBody = useRef<HTMLDivElement>(null);
+  function openPanel(next: Panel) {
+    invoker.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (next !== 'records') { setSelectedRecord(null); setComparison(null); }
+    setPanel(next);
+  }
+  function closePanel() {
+    setPanel(null);
+    setSelectedRecord(null);
+    setComparison(null);
+    const target = invoker.current;
+    if (target?.isConnected && !target.closest('.expedition-panel')) target.focus();
+    else document.getElementById('panel-mission-button')?.focus();
+  }
+  useEffect(() => {
+    if (panel) {
+      closeButton.current?.focus();
+      panelBody.current?.scrollTo({ top: 0 });
+    }
+  }, [panel, selectedRecord, comparison]);
+  const { status, currentAction, usage } = snapshot;
   const active = status === 'running' || status === 'paused';
+  const needsRecovery = active && !!(snapshot.usagePause || snapshot.decisionFailure);
+  // Open once for each new guard/failure. Closing the panel never acknowledges it.
+  const recoveryKey = needsRecovery ? JSON.stringify([snapshot.usagePause, snapshot.decisionFailure, decisions.at(-1)?.id]) : '';
+  useEffect(() => { if (recoveryKey) setPanel('usage'); }, [recoveryKey]);
+  useEffect(() => { if (status === 'ended') setPanel('results'); }, [status]);
   const decisionPhase = status === 'ended' ? 'Ended' : snapshot.usagePause ? 'Usage paused' : snapshot.decisionFailure ? 'Failed'
     : status === 'paused' ? 'Paused' : snapshot.decisionPending ? (snapshot.controller === 'typesafe' ? 'Jev choosing' : 'Controller choosing')
       : currentAction ? 'Code executing' : 'Ready';
-  const statusLabel = snapshot.usagePause && active ? 'Inference usage paused · Expedition time frozen' : snapshot.decisionPending && active ? 'Decision pending · Expedition time frozen' : { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
-  const { label: actionLabel, description: actionDescription } = snapshot.decisionPending && active
-    ? { label: 'Awaiting decision', description: 'Expedition time and resources are frozen. Camera and mission controls remain available.' }
-    : snapshot.usagePause && active ? { label: 'Inference usage paused', description: 'Review the usage guards and choose how to continue.' } : snapshot.decisionFailure && active ? { label: 'Decision paused', description: failureMessages[snapshot.decisionFailure] } : describeAction(currentAction, status);
+  const statusLabel = snapshot.endingCondition === 'stranded' ? 'Rover stranded' : needsRecovery ? 'Expedition time frozen'
+    : snapshot.decisionPending && active ? 'Decision pending · Expedition time frozen'
+      : { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
+  const currentActionLabel = snapshot.decisionPending && active ? 'Awaiting decision'
+    : snapshot.usagePause && active ? 'Inference usage paused' : snapshot.decisionFailure && active ? 'Decision paused' : describeAction(currentAction, status).label;
+  const openRecord = (record: ExpeditionRecord) => { pauseForInspection(); setComparison(null); setSelectedRecord(record); setPanel('records'); };
+  const compareRecords = (records: [ExpeditionRecord, ExpeditionRecord]) => { pauseForInspection(); setSelectedRecord(null); setComparison(records); setPanel('records'); };
+  const returnToLive = () => { setComparison(null); setSelectedRecord(null); closePanel(); };
 
-  return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div className="brand"><span className="brand-mark" aria-hidden="true">↗</span><h1>RoverLab</h1><span className="brand-divider" /><span className="brand-subtitle">Planetary exploration sandbox</span></div>
-        <a className="records-link" href="#saved-expeditions">Saved expeditions</a><span className="local-tag"><i /> {comparison ? 'Expedition comparison' : selectedRecord ? 'Saved expedition' : 'Local expedition'}</span>
-      </header>
-      <main>
-        {comparison ? <ExpeditionComparison records={comparison} onClose={() => setComparison(null)} onOpen={openRecord} />
-          : selectedRecord ? <SavedExpeditionView key={selectedRecord.id} record={selectedRecord} onClose={() => setSelectedRecord(null)} /> : <>
-        <div className="page-heading">
-          <div><p className="eyebrow">{snapshot.controllerHistory.map(entry => entry.controller.toUpperCase()).join(' → ')} EXPEDITION</p><h2>{snapshot.area.name}<span className="title-dot">.</span></h2><p className="page-description">An unknown world. An autonomous rover. Discover it together.</p></div>
-          <div className="scenario-info"><span>AUTHORED SCENARIO</span><strong>{snapshot.area.width} × {snapshot.area.depth} <span>grid</span></strong><small>{snapshot.durationMs / 60_000}-minute expedition</small></div>
-        </div>
-        <div className="workspace">
-          <div className="world-column">
-            <div className="world-heading"><span><i className={`status-dot ${status}`} />{snapshot.endingCondition === 'stranded' ? 'Rover stranded' : statusLabel}</span><span className="world-heading-right">OBSERVATION VIEW</span></div>
-            <ExpeditionScene snapshot={snapshot} getFullWorldView={getFullWorldView} />
-            <section className="control-bar" aria-label="Expedition controls">
-              <div className="transport">
-                {status === 'ready' && <button className="primary" onClick={() => dispatch({ type: 'start' })}><span aria-hidden="true">▶</span> Start expedition</button>}
-                {status === 'running' && <button className="primary" onClick={() => dispatch({ type: 'pause' })}><span aria-hidden="true">Ⅱ</span> Pause expedition</button>}
-                {status === 'paused' && <button className="primary" disabled={!!snapshot.decisionFailure || !!snapshot.usagePause} onClick={() => dispatch({ type: 'resume' })}><span aria-hidden="true">▶</span> Resume expedition</button>}
-                {status === 'ended' && <span className="complete-label">Expedition complete</span>}
-                <button className="secondary" aria-label="Stop expedition" disabled={!active} onClick={() => dispatch({ type: 'stop' })}>Stop</button>
-                <button className="secondary" aria-label="Reset expedition" onClick={() => dispatch({ type: 'reset' })}><span aria-hidden="true">↻</span> Reset</button>
-              </div>
-              <div className="speed-control" role="group" aria-label="Playback speed"><span>Playback</span>{([1, 2, 4] as const).map(speed => <button key={speed} aria-pressed={snapshot.speed === speed} disabled={status === 'ended'} onClick={() => dispatch({ type: 'set-speed', speed })}>{speed}×</button>)}</div>
-            </section>
+  return <div className={`expedition-shell${panel ? ' panel-open' : ''}${panel === 'records' ? ' records-open' : ''}`} onKeyDown={event => {
+    if (event.key === 'Escape' && panel) { event.preventDefault(); closePanel(); }
+  }}>
+    <header className="expedition-header">
+      <div className="lab-brand"><h1>RoverLab</h1><span>PLANETARY DECISION LAB</span></div>
+      <section className="live-telemetry" aria-label="Live expedition telemetry">
+        <div><small>TIME LEFT</small><strong aria-label="Remaining expedition time">{formatTime(snapshot.remainingMs)}</strong><span>{formatTime(snapshot.elapsedMs)} elapsed</span></div>
+        <div><small>BATTERY</small><strong aria-label="Battery charge">{snapshot.battery.toFixed(1)} / {snapshot.batteryCapacity}</strong><meter aria-label="Battery level" min={0} max={snapshot.batteryCapacity} value={snapshot.battery} /></div>
+        <div><small>CARGO</small><strong aria-label="Cargo capacity">{snapshot.cargo.length} / {snapshot.cargoCapacity}</strong><span>samples aboard</span></div>
+        <div><small>DELIVERED SCIENCE</small><strong aria-label="Science score">{snapshot.scienceScore}</strong><span>science points</span></div>
+        <div className="live-usage"><small>LIVE PROVIDER ATTEMPTS</small><strong aria-label="Live provider attempts">{usage ? `${usage.providerAttempts}${usage.unconfirmedSubmissions ? ' confirmed · lower bound' : ''}` : 'Unavailable'}</strong><span>{usage?.unconfirmedSubmissions ? `${usage.unconfirmedSubmissions} unconfirmed` : 'This expedition'}</span></div>
+        <div className="live-cost"><small>ESTIMATED INFERENCE COST</small><strong aria-label="Live estimated inference cost">{formatInferenceCost(usage?.estimatedCost)}{usage?.estimatedCost === null && ' · incomplete'}</strong><span>{usage?.estimatedCost === null ? `Known subtotal ${formatInferenceCost(usage.knownEstimatedCost)}` : 'Estimate, not verified charges'}</span></div>
+      </section>
+      <FullscreenButton />
+    </header>
+    <main className="expedition-stage" aria-label="Live expedition workspace">
+      <ExpeditionScene snapshot={snapshot} getFullWorldView={getFullWorldView} />
+      <div className="live-status" aria-label="Live expedition status"><span>LIVE · {controllerLabels[snapshot.controller]}</span><strong aria-label="Decision phase">{decisionPhase}</strong><span>{statusLabel}</span>{needsRecovery && <button className="secondary" onClick={() => openPanel('usage')}>Review recovery</button>}</div>
+      <nav className="panel-navigation" aria-label="Expedition panels">{(Object.entries(panels) as [Panel, string][]).filter(([name]) => name !== 'results' || status === 'ended').map(([name, title]) =>
+        <button className="secondary" id={`panel-${name}-button`} key={name} aria-expanded={panel === name} aria-controls="expedition-panel" onClick={() => panel === name ? closePanel() : openPanel(name)}>{title}</button>
+      )}</nav>
+      <LatestDecision snapshot={snapshot} decisions={decisions} onInspect={() => { pauseForInspection(); openPanel('evidence'); }} />
+      <aside id="expedition-panel" className={`expedition-panel${panel === 'records' ? ' record-panel' : ''}`} aria-label="Expedition panel" hidden={!panel}>
+        <div className="expedition-panel-heading"><h2>{panel ? panels[panel] : ''}</h2><button className="secondary" ref={closeButton} onClick={closePanel} aria-label="Close panel">Close</button></div>
+        <div className="expedition-panel-body" ref={panelBody}>
+          <div hidden={panel !== 'mission'}><MissionControl snapshot={snapshot} dispatch={dispatch} /></div>
+          <div hidden={panel !== 'evidence'}>
+            <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} />
+            <RoverEvidence snapshot={snapshot} />
+          </div>
+          <div hidden={panel !== 'usage'}>
             <InferenceUsagePause snapshot={snapshot} decisions={decisions} dispatch={dispatch} />
             {snapshot.decisionFailure && !snapshot.usagePause && status === 'paused' && <section className="recovery-panel" aria-label="Inference recovery">
-              <p role="status">{failureMessages[snapshot.decisionFailure]}</p>
+              <h3>Jev decision failed</h3><p role="status">{failureMessages[snapshot.decisionFailure]}</p>
               {snapshot.controller === 'typesafe' && <>
                 <p>Expedition time and resources remain paused. Retry uses the current mission instructions and remaining inference budget. Continuing with baseline resumes this expedition and records the controller change.</p>
                 <div className="recovery-actions">
@@ -102,71 +111,29 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
                 </div>
               </>}
             </section>}
-            <p className="world-note"><span aria-hidden="true">↳</span> The controller chooses an action and target. Code constructs the route, moves the rover, and scores delivered samples.</p>
-            <StormControl snapshot={snapshot} dispatch={dispatch} />
-            <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} />
-          </div>
-          <aside className="telemetry" aria-label="Expedition telemetry">
-            <div className="panel-title"><span>MISSION CONTROL</span><span className="connection-dot" /></div>
-            <div className="controller-card"><span className="controller-icon" aria-hidden="true">⌘</span><div><strong>{controllerLabel}</strong><p>{snapshot.controller === 'typesafe' ? 'Bounded TypeSafe choices' : 'Rule-based autonomy'}</p></div><span className="controller-tag">LOCAL</span></div>
-            <section className="objective-block">
-              <label className="field-label" htmlFor="expedition-controller">EXPEDITION CONTROLLER</label>
-              <select id="expedition-controller" disabled={status !== 'ready'} value={snapshot.controller} onChange={event => dispatch({ type: 'set-controller', controller: event.target.value as 'baseline' | 'typesafe' })}>
-                <option value="baseline">Baseline · No key needed</option><option value="typesafe">TypeSafe · Server key required</option>
-                {snapshot.controller === 'scripted' && <option value="scripted">Scripted verification</option>}
-              </select>
-              <p className="memory-note">Select before starting. Reset to change controller.</p>
-              <UsageSummary usage={snapshot.usage} localSubmissions={snapshot.inferenceAttempts} waitMs={snapshot.inferenceLatencyMs} />
-            </section>
+            <UsageSummary usage={usage} localSubmissions={snapshot.inferenceAttempts} waitMs={snapshot.inferenceLatencyMs} />
             <InferenceLimitSetup snapshot={snapshot} decisions={decisions} dispatch={dispatch} />
-            <section className="objective-block">
-              <label className="field-label" htmlFor="scientific-objective">SCIENTIFIC OBJECTIVE</label>
-              <select id="scientific-objective" disabled={status !== 'ready'} value={snapshot.objective} onChange={event => dispatch({ type: 'set-objective', objective: event.target.value as ScientificObjective })}>
-                {Object.entries(scientificObjectives).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-              <p className="memory-note">{status === 'ready' ? 'Choose before starting.' : 'Objective locked. Reset to choose a new expedition.'} Delivered samples earn {snapshot.rubric.unrelated} for unrelated, {snapshot.rubric.suggestive} for suggestive, or {snapshot.rubric['strong-evidence']} for strong evidence.</p>
-            </section>
-            <MissionInstructions snapshot={snapshot} dispatch={dispatch} />
-            <div className="time-block"><span className="field-label">TIME REMAINING</span><div className="timer" aria-label="Remaining expedition time">{formatTime(snapshot.remainingMs)}</div><div className="time-track"><div style={{ width: `${snapshot.remainingMs / snapshot.durationMs * 100}%` }} /></div><div className="time-caption"><span>Expedition time</span><span>{formatTime(snapshot.durationMs)} budget</span></div></div>
-            <section className="energy-block" aria-label="Energy resources">
-              <div className="telemetry-row"><span>Battery</span><strong aria-label="Battery charge">{snapshot.battery.toFixed(1)} / {snapshot.batteryCapacity}</strong></div>
-              <meter aria-label="Battery level" min={0} max={snapshot.batteryCapacity} low={snapshot.batteryCapacity * 0.25} high={snapshot.batteryCapacity * 0.75} optimum={snapshot.batteryCapacity} value={snapshot.battery} />
-              <div className="telemetry-row"><span>Energy used</span><strong aria-label="Energy used">{snapshot.energyUsed.toFixed(1)} units</strong></div>
-              <p className="memory-note">Movement uses energy; rough terrain costs more. Recharge at base uses expedition time.</p>
-            </section>
-            <div className="action-block"><p aria-label="Decision phase">{decisionPhase}</p><span className="field-label">CURRENT ACTION</span><strong aria-label="Current action">{actionLabel}</strong><p>{actionDescription}{currentAction && 'target' in currentAction && currentAction.routeMode === 'avoid-storm' && ' Taking a known route around the dust storm.'}</p></div>
-            <div className="telemetry-row"><span>Rover coordinates</span><strong aria-label="Rover coordinates">{rover.position.x.toFixed(2)} / {rover.position.z.toFixed(2)}</strong></div>
-            <div className="telemetry-row"><span>Distance traveled</span><strong>{rover.distance.toFixed(1)} <span>cells</span></strong></div>
-            <section className="science-block" aria-label="Science progress">
-              <div className="telemetry-row"><span>Cargo</span><strong aria-label="Cargo capacity">{snapshot.cargo.length} / {snapshot.cargoCapacity}</strong></div>
-              <p className="memory-note">{snapshot.cargo.length ? snapshot.cargo.map(sample => sample.label).join(' · ') : 'Cargo empty'}</p>
-              <div className="telemetry-row"><span>Science score</span><strong aria-label="Science score">{snapshot.scienceScore}</strong></div>
-              <div className="telemetry-row"><span>Samples delivered</span><strong aria-label="Samples delivered">{snapshot.deliveredSamples.length}</strong></div>
-              <div className="telemetry-row"><span>Samples inspected</span><strong aria-label="Samples inspected">{snapshot.inspectionCount}</strong></div>
-            </section>
-            <section className="discovery-block" aria-label="Discovery progress">
-              <span className="field-label">DISCOVERY</span>
-              <div className="telemetry-row"><span>Terrain discovered</span><strong aria-label="Terrain discovered">{knownCells} / {snapshot.area.width * snapshot.area.depth} cells</strong></div>
-              <div className="telemetry-row"><span>Samples discovered</span><strong aria-label="Samples discovered">{snapshot.discoveryCount}</strong></div>
-              <p className="memory-note">Sensors reach {snapshot.sensorRange} cells. Dim terrain is remembered; its conditions may have changed. Diamonds mark rough terrain.</p>
-              {samples.length === 0 && <p className="memory-note">No samples discovered yet.</p>}
-              {samples.map(sample => {
-                const delivery = snapshot.deliveredSamples.find(item => item.sampleId === sample.sampleId);
-                return <div className="sample-row" key={sample.id}>
-                <strong>{sample.label}</strong>
-                <span aria-label={`${sample.label} observation`}>{sample.status === 'delivered' ? 'Delivered' : sample.status === 'cargo' ? 'Aboard rover' : currentIds.has(sample.id) ? 'In range' : 'Remembered'} · Last seen {formatTime(Math.floor(sample.observedAtMs / 1_000) * 1_000)}.{Math.floor(sample.observedAtMs % 1_000 / 100)}</span>
-                <small>{sample.properties ? sample.properties.join(' · ') : 'Properties unknown · Inspection required'}</small>
-                {sample.inspectedAtMs !== undefined && <small>Inspected at {formatTime(sample.inspectedAtMs)}</small>}
-                {delivery && <small>{delivery.classification === 'strong-evidence' ? 'Strong evidence' : delivery.classification === 'suggestive' ? 'Suggestive' : 'Unrelated'} · {delivery.score} science points</small>}
-              </div>; })}
-            </section>
-            {status === 'ended' && <ExpeditionResults snapshot={snapshot} />}
-          </aside>
+          </div>
+          <div hidden={panel !== 'results'}>{status === 'ended' && <ExpeditionResults snapshot={snapshot} />}<button className="secondary" onClick={() => openPanel('records')}>Browse saved expeditions</button></div>
+          <div hidden={panel !== 'records'}>
+            {comparison ? <ExpeditionComparison records={comparison} onClose={returnToLive} onOpen={openRecord} />
+              : selectedRecord ? <SavedExpeditionView key={selectedRecord.id} record={selectedRecord} onClose={returnToLive} /> : null}
+            <SavedExpeditions refreshingUsage={refreshingUsage} usageRefreshMessage={usageRefreshMessage} refreshInferenceUsage={refreshInferenceUsage} completedRecords={completedRecords} onOpen={openRecord} onCompare={compareRecords} />
+          </div>
         </div>
-        </>}
-        <SavedExpeditions refreshingUsage={refreshingUsage} usageRefreshMessage={usageRefreshMessage} refreshInferenceUsage={refreshInferenceUsage} completedRecords={completedRecords} onOpen={openRecord} onCompare={compareRecords} />
-        <footer><span>ROVERLAB <span className="footer-separator">/</span> AUTONOMOUS EXPLORATION</span><span>{comparison ? 'Saved expedition comparison' : <>{selectedRecord ? selectedRecord.results.controllerHistory.map(entry => controllerLabels[entry.controller]).join(' → ') : controllerLabel} · {selectedRecord?.results.area.id ?? snapshot.area.id}</>}</span></footer>
-      </main>
-    </div>
-  );
+      </aside>
+      <section className="control-bar live-controls" aria-label="Expedition controls">
+        <div className="transport">
+          {status === 'ready' && <button className="primary" onClick={() => { setPanel(null); dispatch({ type: 'start' }); }}>Start expedition</button>}
+          {status === 'running' && <button className="primary" onClick={() => dispatch({ type: 'pause' })}>Pause expedition</button>}
+          {status === 'paused' && <button className="primary" disabled={needsRecovery} onClick={() => dispatch({ type: 'resume' })}>Resume expedition</button>}
+          {status === 'ended' && <span className="complete-label">Expedition complete</span>}
+          <button className="secondary" aria-label="Stop expedition" disabled={!active} onClick={() => dispatch({ type: 'stop' })}>Stop</button>
+          <button className="secondary" aria-label="Reset expedition" onClick={() => { setPanel(null); setSelectedRecord(null); setComparison(null); dispatch({ type: 'reset' }); }}>Reset</button>
+        </div>
+        <div className="execution-status"><small>CURRENT CODE ACTION</small><strong aria-label="Current action">{currentActionLabel}</strong></div>
+        <div className="speed-control" role="group" aria-label="Playback speed"><span>Playback</span>{([1, 2, 4] as const).map(speed => <button key={speed} aria-pressed={snapshot.speed === speed} disabled={status === 'ended'} onClick={() => dispatch({ type: 'set-speed', speed })}>{speed}×</button>)}</div>
+      </section>
+    </main>
+  </div>;
 }

@@ -1,3 +1,4 @@
+import { openPanel, closePanel } from './panels';
 import { expect, test } from '@playwright/test';
 
 for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
@@ -8,7 +9,9 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
     await page.route('**/api/**', route => { requests++; return route.abort(); });
     await page.goto('/');
     await expect(page.getByLabel('Remaining expedition time')).toHaveText('18:00');
-    if (viewport.width > 500) await expect(page.getByText('18-minute expedition')).toBeVisible();
+    await openPanel(page, 'Mission');
+    await expect(page.getByText(/18-minute expedition/)).toBeVisible();
+    await closePanel(page);
     await expect(page.getByLabel('Terrain discovered')).toHaveText('29 / 1596 cells');
     const scene = page.getByRole('region', { name: 'Planetary scene' });
     await expect(scene.getByText('Western delta', { exact: true })).toBeVisible();
