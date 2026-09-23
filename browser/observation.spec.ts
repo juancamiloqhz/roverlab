@@ -219,7 +219,7 @@ test('sensor coverage follows storm range changes and observation controls stay 
   await scene.screenshot({ path: 'test-results/observation-reduced-sensors.png' });
   await page.getByRole('button', { name: 'Pause expedition' }).click();
   await page.clock.runFor(5_000);
-  await expect(page.getByLabel('Current action')).toContainText('Wait');
+  await expect(page.getByLabel('Current action')).toHaveText('Choice held before execution');
   await expect(scene.getByLabel('Sensor coverage radius')).toHaveText('1.5 cells');
   await page.getByRole('button', { name: 'Resume expedition' }).click();
   await page.clock.runFor(2_000);

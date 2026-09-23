@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 
 test('completed records persist across reload, selection and JSON exchange without inference', async ({ page, browser }) => {
+  test.setTimeout(60_000); // Includes two browser contexts, persistence, and spatial inspection.
   await page.clock.install();
   let inferenceRequests = 0;
   page.on('request', request => { if (request.url().includes('/api/')) inferenceRequests++; });
@@ -83,6 +84,7 @@ test('completed records persist across reload, selection and JSON exchange witho
 });
 
 test('TypeSafe-only and mixed-controller histories survive browser storage and import without a backend', async ({ page, browser }) => {
+  test.setTimeout(60_000); // Includes multiple records, imports, and rendered historical maps.
   await page.clock.install();
   await page.goto('/');
   await openPanel(page, 'Mission');

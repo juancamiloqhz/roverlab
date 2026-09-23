@@ -689,7 +689,6 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         else {
           state.inspectionDecisionId = command.decisionId;
           state.status = 'paused';
-          pendingMs = 0;
           record({ type: 'decision-inspected', decisionId: command.decisionId });
         }
       } else if (command.type === 'end-inspection' && completedInspectionId) {
@@ -926,7 +925,7 @@ export function createReplay(value: unknown): ExpeditionSession {
     getSnapshot() {
       const snapshot = { ...simulation.session.getSnapshot(), status, speed };
       if (teachingMode !== undefined) { snapshot.teachingMode = teachingMode; snapshot.heldDecisionId = heldDecisionId; }
-      if (inspectionDecisionId) snapshot.inspectionDecisionId = inspectionDecisionId;
+      if (snapshot.inspectionDecisionId !== undefined || inspectionDecisionId) snapshot.inspectionDecisionId = inspectionDecisionId;
       if (stopped) { snapshot.currentAction = null; snapshot.reconsiderationReason = null; snapshot.endingCondition = 'manual-stop'; }
       return snapshot;
     },
@@ -939,11 +938,10 @@ export function createReplay(value: unknown): ExpeditionSession {
     onUsageUpdated: () => () => {},
     refreshInferenceUsage: async () => {},
     dispatch(command) {
-      if (command.type === 'set-teaching-mode' && status !== 'ended') teachingMode = command.enabled;
+      if (command.type === 'set-teaching-mode') teachingMode = command.enabled;
       else if (command.type === 'inspect-decision' && simulation.session.getDecisions().some(item => item.id === command.decisionId)) {
         inspectionDecisionId = command.decisionId;
         if (status !== 'ended') status = 'paused';
-        pendingMs = 0;
       } else if (command.type === 'end-inspection') inspectionDecisionId = null;
       else if (command.type === 'continue-choice' && status === 'paused' && heldDecisionId && !inspectionDecisionId) {
         heldDecisionId = null; status = 'running';

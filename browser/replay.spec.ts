@@ -38,6 +38,7 @@ test('saved and imported expeditions replay with independent controls and unchan
   await expect(replay.getByRole('table', { name: 'Available actions' })).toBeVisible();
   await replay.getByRole('group', { name: 'Replay speed' }).getByRole('button', { name: '4×' }).click();
   await page.screenshot({ path: 'test-results/replay-paused.png', fullPage: true });
+  await replay.getByRole('button', { name: 'Return to replay' }).click();
   await replay.getByRole('button', { name: 'Resume replay' }).click();
   await page.clock.fastForward(270_000);
   await expect(replay.getByRole('status')).toHaveText('Replay complete');

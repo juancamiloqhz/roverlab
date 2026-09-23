@@ -29,7 +29,7 @@ test('TypeSafe pending decisions keep the camera and controls responsive and sho
   await expect(page.getByLabel('Remaining expedition time')).toHaveText('18:00');
   await expect(page.getByLabel('Battery charge', { exact: true })).toHaveText('160.0 / 160');
   await request.post('http://127.0.0.1:4174/release');
-  await expect(page.getByLabel('Current action')).toContainText('Wait');
+  await expect(page.getByLabel('Current action')).toHaveText('Choice held before execution');
   const timeline = page.getByRole('region', { name: 'Decision timeline' });
   await openPanel(page, 'Evidence');
   await timeline.getByText(/Decision 1 ·/).click();

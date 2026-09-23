@@ -1,4 +1,4 @@
-import { openPanel } from './panels';
+import { openPanel, closePanel } from './panels';
 import { expect, test } from '@playwright/test';
 
 test('mission control watches a 3D baseline expedition, orbits while paused, and finishes', async ({ page }) => {
@@ -162,6 +162,7 @@ test('mission control sees energy use, separate recharging, and paused resource 
 
 test('mission control edits instructions and inspects the baseline decision timeline', async ({ page }) => {
   await page.clock.install();
+  await page.clock.pauseAt(new Date());
   await page.goto('/');
   const instructions = page.getByRole('textbox', { name: 'Mission instructions' });
   await openPanel(page, 'Mission');
@@ -177,6 +178,8 @@ test('mission control edits instructions and inspects the baseline decision time
   await expect(timeline.getByRole('table', { name: 'Available actions' })).toContainText('Frontier 19 / 24');
   await expect(timeline.getByRole('table', { name: 'Observations used' })).toContainText('0.0 s');
   await expect(timeline.getByRole('table', { name: 'Rover memory used' })).toContainText('Base');
+  await closePanel(page);
+  await page.getByRole('button', { name: 'Resume expedition' }).click();
   await page.clock.runFor(1_000);
   await page.getByRole('button', { name: 'Pause expedition' }).click();
   await openPanel(page, 'Mission');
@@ -190,8 +193,9 @@ test('mission control edits instructions and inspects the baseline decision time
   await openPanel(page, 'Evidence');
   await timeline.getByText(/Decision 2 ·/).click();
   await expect(timeline.getByLabel('Decision 2 details')).toContainText('Preserve energy for the return.');
-  await expect(timeline.getByLabel('Decision 1 details')).toContainText('Prioritize evidence of past water.');
   await expect(timeline.getByLabel('Decision 2 details')).toContainText('Instructions changed');
+  await timeline.getByText(/Decision 1 ·/).click();
+  await expect(timeline.getByLabel('Decision 1 details')).toContainText('Prioritize evidence of past water.');
   await page.screenshot({ path: 'test-results/decisions.png', fullPage: true });
   await page.getByRole('button', { name: 'Reset expedition' }).click();
   await openPanel(page, 'Evidence');
@@ -238,7 +242,7 @@ test('a pending scripted decision freezes time while camera and mission controls
   await expect(page.getByLabel('Rover coordinates')).toHaveText('16.00 / 24.00');
   await page.getByRole('button', { name: 'Pause expedition' }).click();
   await page.clock.runFor(5_000);
-  await expect(page.getByLabel('Current action')).toContainText('Wait');
+  await expect(page.getByLabel('Current action')).toHaveText('Choice held before execution');
   await expect(page.getByRole('button', { name: 'Resume expedition' })).toBeVisible();
   await expect(page.getByLabel('Remaining expedition time')).toHaveText('18:00');
   await page.getByRole('button', { name: 'Resume expedition' }).click();

@@ -252,3 +252,51 @@ test('failure recovery cannot request a replacement until historical inspection 
   replay.dispatch({ type: 'start' });
   expect(replay.getDecisions()).toEqual(record.decisions);
 });
+
+test('replay inspection controls stay separate from recorded pauses and teaching can be enabled for a completed replay restart', async () => {
+  let settle!: (id: string) => void;
+  const live = createExpedition({ controller: { id: 'scripted', decide: () => new Promise<string>(resolve => { settle = resolve; }) } });
+  live.dispatch({ type: 'start' });
+  live.dispatch({ type: 'inspect-decision', decisionId: 1 });
+  settle('wait:5000');
+  await Promise.resolve();
+  live.dispatch({ type: 'end-inspection' });
+  live.dispatch({ type: 'resume' });
+  live.dispatch({ type: 'stop' });
+  const replay = createReplay(live.getCompletedRecords()[0]!);
+  replay.dispatch({ type: 'start' });
+  expect(replay.getSnapshot().status).toBe('ended');
+  replay.dispatch({ type: 'set-teaching-mode', enabled: true });
+  replay.dispatch({ type: 'reset' });
+  replay.dispatch({ type: 'start' });
+  expect(replay.getSnapshot().heldDecisionId).toBe(1);
+  expect(replay.getSnapshot().inspectionDecisionId).toBeNull();
+  replay.dispatch({ type: 'inspect-decision', decisionId: 1 });
+  replay.dispatch({ type: 'end-inspection' });
+  expect(replay.getSnapshot().inspectionDecisionId).toBeNull();
+  replay.dispatch({ type: 'continue-choice' });
+  expect(replay.getSnapshot().status).toBe('ended');
+});
+
+test('inspection preserves a partial simulation step in live play and replay without adding paused wall time', () => {
+  const live = createExpedition();
+  live.dispatch({ type: 'start' });
+  live.advanceWallTime(50);
+  live.dispatch({ type: 'inspect-decision', decisionId: 1 });
+  live.advanceWallTime(60_000);
+  live.dispatch({ type: 'end-inspection' });
+  live.dispatch({ type: 'resume' });
+  live.advanceWallTime(50);
+  expect(live.getSnapshot().elapsedMs).toBe(100);
+  live.advanceWallTime(400);
+  live.dispatch({ type: 'stop' });
+  const replay = createReplay(live.getCompletedRecords()[0]!);
+  replay.dispatch({ type: 'start' });
+  replay.advanceWallTime(50);
+  replay.dispatch({ type: 'inspect-decision', decisionId: 1 });
+  replay.advanceWallTime(60_000);
+  replay.dispatch({ type: 'end-inspection' });
+  replay.dispatch({ type: 'resume' });
+  replay.advanceWallTime(50);
+  expect(replay.getSnapshot().elapsedMs).toBe(100);
+});

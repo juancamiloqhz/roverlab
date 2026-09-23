@@ -1,4 +1,4 @@
-import { openPanel } from './panels';
+import { openPanel, closePanel } from './panels';
 import { expect, test } from '@playwright/test';
 
 test('mission control introduces a hidden storm, observes detection, and freezes its visible duration while orbiting', async ({ page }) => {
@@ -45,6 +45,7 @@ test('mission control introduces a hidden storm, observes detection, and freezes
   await openPanel(page, 'Evidence');
   await timeline.locator('summary').last().click();
   await expect(timeline).toContainText('Dust storm');
+  await closePanel(page);
   await page.getByRole('button', { name: 'Resume expedition' }).click();
   await page.clock.fastForward(41_000);
   await openPanel(page, 'Mission');
