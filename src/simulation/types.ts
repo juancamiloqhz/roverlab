@@ -105,6 +105,9 @@ export type ControllerInput = {
 export type PlaybackSpeed = 1 | 2 | 4;
 export type EndingCondition = 'timeout' | 'manual-stop' | 'stranded';
 export type ExpeditionCommand =
+  | { type: 'set-teaching-mode'; enabled: boolean }
+  | { type: 'inspect-decision'; decisionId: number }
+  | { type: 'end-inspection' | 'continue-choice' }
   | { type: 'start' | 'pause' | 'resume' | 'reset' | 'stop' | 'retry-decision' | 'continue-with-baseline' | 'introduce-storm' }
   | { type: 'set-inference-limits'; limits: InferenceLimits }
   | { type: 'acknowledge-usage'; attemptIds: string[] }
@@ -115,6 +118,9 @@ export type ExpeditionCommand =
   | { type: 'set-controller'; controller: 'baseline' | 'typesafe' }
   | { type: 'set-speed'; speed: PlaybackSpeed };
 export type ExpeditionSnapshot = {
+  teachingMode?: boolean;
+  inspectionDecisionId?: number | null;
+  heldDecisionId?: number | null;
   mission?: MissionState;
   inferenceLimits?: InferenceLimits;
   acknowledgedAttemptIds?: string[];
@@ -158,6 +164,10 @@ export type ExpeditionSnapshot = {
   memory: Observation[];
 };
 export type EventDetail =
+  | { type: 'teaching-changed'; enabled: boolean }
+  | { type: 'decision-inspected' | 'decision-held'; decisionId: number }
+  | { type: 'inspection-ended' }
+  | { type: 'held-decision-cleared'; decisionId: number; reason: 'executed' | 'invalidated' }
   | { type: 'mission-changed'; mission: MissionRevision }
   | { type: 'mission-applied'; version: number }
   | { type: 'storm-introduced'; storm: DustStorm }
@@ -201,7 +211,7 @@ export type ExpeditionStartingConditions = {
   waitMs: number; inspectMs: number; collectMs: number; cargoCapacity: number; controller: ExpeditionController['id'];
 };
 export type ExpeditionRecord = {
-  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8; id: string; completedAt: string;
+  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9; id: string; completedAt: string;
   startingConditions: ExpeditionStartingConditions;
   events: ExpeditionEvent[]; decisions: Decision[]; results: ExpeditionSnapshot;
 };

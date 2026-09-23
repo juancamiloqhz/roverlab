@@ -60,7 +60,7 @@ test('completed records persist across reload, selection and JSON exchange witho
   await expect(imported.getByRole('region', { name: 'Expedition results' })).toHaveText(results!);
   await imported.getByText(/Decision 1 ·/).click();
   await expect(imported.getByRole('table', { name: 'Observations used' })).toBeVisible();
-  await expect(imported.getByRole('table', { name: 'Available actions' })).not.toContainText('Returned probability');
+  await expect(imported.getByRole('table', { name: 'Available actions' })).toContainText('Unavailable');
   const exchangedDownload = importedPage.waitForEvent('download');
   await imported.getByRole('button', { name: 'Export expedition JSON' }).click();
   expect(JSON.parse(await readFile((await (await exchangedDownload).path())!, 'utf8'))).toEqual(record);

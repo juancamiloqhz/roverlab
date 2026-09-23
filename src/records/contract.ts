@@ -83,6 +83,10 @@ const decision: z.ZodType<Decision> = z.strictObject({
 
 const eventFields = { sequence: integer, expedition: integer.positive(), atMs: number };
 const event: z.ZodType<ExpeditionEvent> = z.discriminatedUnion('type', [
+  z.strictObject({ ...eventFields, type: z.literal('teaching-changed'), enabled: z.boolean() }),
+  z.strictObject({ ...eventFields, type: z.enum(['decision-inspected', 'decision-held']), decisionId: integer.positive() }),
+  z.strictObject({ ...eventFields, type: z.literal('inspection-ended') }),
+  z.strictObject({ ...eventFields, type: z.literal('held-decision-cleared'), decisionId: integer.positive(), reason: z.enum(['executed', 'invalidated']) }),
   z.strictObject({ ...eventFields, type: z.literal('mission-changed'), mission: missionRevisionSchema }),
   z.strictObject({ ...eventFields, type: z.literal('mission-applied'), version: integer }),
   z.strictObject({ ...eventFields, type: z.literal('storm-introduced'), storm }),
@@ -118,6 +122,7 @@ const event: z.ZodType<ExpeditionEvent> = z.discriminatedUnion('type', [
 ]);
 
 const results: z.ZodType<ExpeditionSnapshot> = z.strictObject({
+  teachingMode: z.boolean().optional(), inspectionDecisionId: z.null().optional(), heldDecisionId: z.null().optional(),
   mission: missionStateSchema.optional(),
   inferenceLimits: inferenceLimitsSchema.optional(), acknowledgedAttemptIds: z.array(z.uuid()).max(20_000).optional(),
   usagePause: usagePauseSchema.nullable().optional(),
@@ -135,7 +140,7 @@ const results: z.ZodType<ExpeditionSnapshot> = z.strictObject({
 });
 
 const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
-  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8)]), id: z.uuid(), completedAt: z.iso.datetime(),
+  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9)]), id: z.uuid(), completedAt: z.iso.datetime(),
   startingConditions, events: z.array(event).min(1).max(100_000), decisions: z.array(decision).max(10_000), results,
 }).refine(record => {
   const { results: final, startingConditions: start, decisions, events } = record;
@@ -207,12 +212,17 @@ const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
     && inputs.every(input => (record.version >= 7) === !!input.decisionBoundary);
 }).refine(record => (record.version >= 8) === !!record.startingConditions.simulationVersion
   && (record.version >= 8 || (record.startingConditions.scenario.durationMs === undefined
-    && record.startingConditions.scenario.batteryCapacity === undefined && record.startingConditions.scenario.regions === undefined))).refine(hasConsistentHistory);
+    && record.startingConditions.scenario.batteryCapacity === undefined && record.startingConditions.scenario.regions === undefined)))
+  .refine(record => record.version >= 9
+    ? record.results.teachingMode !== undefined && record.results.inspectionDecisionId === null && record.results.heldDecisionId === null
+    : record.results.teachingMode === undefined && record.results.inspectionDecisionId === undefined && record.results.heldDecisionId === undefined
+      && record.events.every(event => !['teaching-changed', 'decision-inspected', 'inspection-ended', 'decision-held', 'held-decision-cleared'].includes(event.type)))
+  .refine(hasConsistentHistory);
 
 export const MAX_RECORD_BYTES = 32 * 1024 * 1024;
 export function validateExpeditionRecord(value: unknown): ExpeditionRecord {
   const parsed = recordSchema.safeParse(value);
-  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, 4, 5, 6, 7, or 8 JSON export with valid history and results.');
+  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, 4, 5, 6, 7, 8, or 9 JSON export with valid history and results.');
   return parsed.data;
 }
 export function importExpeditionRecord(json: string): ExpeditionRecord {

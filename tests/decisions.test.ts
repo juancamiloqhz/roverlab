@@ -172,7 +172,7 @@ test('a valid response received during manual pause does not resume expedition t
   resolve('wait:5000');
   await Promise.resolve();
   expedition.advanceWallTime(20_000);
-  expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', elapsedMs: 0, currentAction: { kind: 'wait' } });
+  expect(expedition.getSnapshot()).toMatchObject({ status: 'paused', elapsedMs: 0, currentAction: null, heldDecisionId: 1 });
   expedition.dispatch({ type: 'resume' });
   expedition.advanceWallTime(1_000);
   expect(expedition.getSnapshot().elapsedMs).toBe(1_000);

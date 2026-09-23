@@ -15,20 +15,25 @@ export function ExpeditionReplay({ session }: { session: ExpeditionSession }) {
   const [stopped, setStopped] = useState(false);
   const active = snapshot.status === 'running' || snapshot.status === 'paused';
   const action = snapshot.currentAction;
+  const selected = decisions.find(item => item.id === snapshot.inspectionDecisionId);
+  const inspect = (decisionId: number) => dispatch({ type: 'inspect-decision', decisionId });
   return <section className="expedition-replay" aria-label="Expedition replay">
     <p className="eyebrow">REPLAY · RECORDED EXPEDITION</p>
     <p className="replay-note">Recorded choices drive this replay. No API key or new inference requests are needed. Inference usage and latency below describe the original expedition.</p>
     <div className="workspace">
       <div className="world-column">
         <div className="world-heading"><span role="status">{stopped ? 'Replay stopped' : snapshot.status === 'ended' ? 'Replay complete' : snapshot.status === 'paused' ? 'Replay paused' : 'Replay running'}</span><span className="world-heading-right">RECORDED PLAYBACK</span></div>
-        <ExpeditionScene snapshot={snapshot} getFullWorldView={getFullWorldView} />
+        <ExpeditionScene snapshot={snapshot} getFullWorldView={getFullWorldView} decision={selected ?? decisions.filter(item => item.action).at(-1)} historical={!!selected} onInspect={inspect} />
         <section className="control-bar" aria-label="Replay controls">
           <div className="transport">
             {snapshot.status === 'running' && <button className="primary" onClick={() => dispatch({ type: 'pause' })}>Pause replay</button>}
-            {snapshot.status === 'paused' && <button className="primary" onClick={() => dispatch({ type: 'resume' })}>Resume replay</button>}
+            {snapshot.status === 'paused' && (selected ? <button className="primary" onClick={() => dispatch({ type: 'end-inspection' })}>Return to replay</button>
+              : snapshot.heldDecisionId ? <button className="primary" onClick={() => dispatch({ type: 'continue-choice' })}>Continue recorded action</button>
+                : <button className="primary" onClick={() => dispatch({ type: 'resume' })}>Resume replay</button>)}
             <button className="secondary" disabled={!active} onClick={() => { dispatch({ type: 'stop' }); setStopped(true); }}>Stop replay</button>
             <button className="secondary" onClick={() => { dispatch({ type: 'reset' }); dispatch({ type: 'start' }); setStopped(false); }}>Restart replay</button>
           </div>
+          <label><input type="checkbox" aria-label="Replay teaching mode" onChange={event => dispatch({ type: 'set-teaching-mode', enabled: event.target.checked })} />Teaching mode</label>
           <div className="speed-control" role="group" aria-label="Replay speed"><span>Playback</span>{([1, 2, 4] as const).map(speed => <button key={speed} aria-pressed={snapshot.speed === speed} disabled={!active} onClick={() => dispatch({ type: 'set-speed', speed })}>{speed}×</button>)}</div>
         </section>
       </div>
@@ -47,6 +52,6 @@ export function ExpeditionReplay({ session }: { session: ExpeditionSession }) {
         <MissionPreferences snapshot={snapshot} />
       </aside>
     </div>
-    <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} />
+    <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} selectedDecisionId={snapshot.inspectionDecisionId} onSelect={inspect} />
   </section>;
 }

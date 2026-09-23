@@ -1,4 +1,4 @@
-import { describeAction } from './describeAction';
+import { DecisionExecution } from './DecisionExecution';
 import { MissionEvidence } from './MissionPreferences';
 import { BaselineRuleEvidence } from './BaselineRuleEvidence';
 import { DecisionUsage } from './InferenceUsage';
@@ -33,34 +33,35 @@ export function ObservationTable({ title, observations }: { title: string; obser
   </table></div>;
 }
 
-function DecisionEntry({ decision }: { decision: Decision }) {
+function DecisionEntry({ decision, selected, onSelect }: { decision: Decision; selected?: boolean; onSelect?: (id: number) => void }) {
   const [open, setOpen] = useState(false);
   const { input } = decision;
   const triggers = decisionTriggers(decision);
-  return <li><details onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary>Decision {decision.id} · {seconds(input.atMs)} · {controllerLabels[decision.controller]} <span>{decision.action ? actionName(decision.action) : decision.status}</span><span>{triggers}</span></summary>
-    {open && <div className="decision-details" aria-label={`Decision ${decision.id} details`}>
+  return <li><details open={onSelect ? selected : undefined} onToggle={event => { if (!onSelect) setOpen(event.currentTarget.open); }}>
+    <summary onClick={onSelect ? event => { event.preventDefault(); onSelect(decision.id); } : undefined}>Decision {decision.id} · {seconds(input.atMs)} · {controllerLabels[decision.controller]} <span>{decision.action ? actionName(decision.action) : decision.status}</span><span>{triggers}</span></summary>
+    {(onSelect ? selected : open) && <div className="decision-details" aria-label={`Decision ${decision.id} details`}>
+      <p>Recorded evidence at {seconds(input.atMs)}. Map numbers match the offered actions below.</p>
       <p><strong>{controllerLabels[decision.controller]}</strong> · {triggers} · {decision.status}</p>
       {input.decisionBoundary && <p>Decision cadence: {input.decisionBoundary.version}</p>}
       {decision.failure && <p>{failureMessages[decision.failure]}</p>}
       <DecisionUsage decision={decision} />
       <p>Selected action: <strong>{decision.action ? actionName(decision.action) : 'None'}</strong></p>
-      {decision.action && <p>Code execution: {describeAction(decision.action, 'running').description}</p>}
+      <DecisionExecution decision={decision} />
       <BaselineRuleEvidence decision={decision} />
       <p>{scientificObjectives[input.objective]} · Instructions version {input.instructionsVersion}</p>
-      {input.mission ? <MissionEvidence mission={input.mission} /> : <blockquote>{input.instructions || 'No mission instructions supplied.'}</blockquote>}
+      {input.mission ? <MissionEvidence mission={input.mission} /> : <><p>Mission mode unavailable in this legacy record. Recorded instructions:</p><blockquote>{input.instructions || 'No mission instructions supplied.'}</blockquote></>}
       <p>Battery {input.battery.toFixed(1)} / {input.batteryCapacity} · Energy used {input.energyUsed.toFixed(1)} · Cargo {input.cargo.length} / {input.cargoCapacity} · Remaining {seconds(input.remainingMs)}</p>
       <p>Cargo: {input.cargo.map(sample => sample.label).join(', ') || 'Empty'}. Position: {input.position.x}, {input.position.z} · Sensor range: {input.sensorRange} cells.</p>
       <p>Previous completed action: {input.previousAction ? actionName(input.previousAction) : 'None'}.</p>
       {decision.latencyMs !== undefined && <p>Decision latency (wall time): {decision.latencyMs.toFixed(1)} ms</p>}
       <div className="decision-table"><table aria-label="Available actions">
         <caption>Available complete actions · {input.candidates.length}</caption>
-        <thead><tr><th>Candidate identity</th><th>Action and target</th><th>Known route estimate</th><th>Selection</th>{decision.probabilities && <th>Returned probability</th>}</tr></thead>
-        <tbody>{input.candidates.map(candidate => <tr key={candidate.id}>
-          <td>{candidate.id}</td><td>{actionName(candidate)}</td>
+        <thead><tr><th>Map / candidate identity</th><th>Action and target</th><th>Known route estimate</th><th>Selection</th><th>Returned probability</th></tr></thead>
+        <tbody>{input.candidates.map((candidate, index) => <tr key={candidate.id} aria-label={`Target ${index + 1}${candidate.id === decision.selectedCandidateId ? ' selected' : ''}`}>
+          <td>#{index + 1} · {candidate.id}</td><td>{actionName(candidate)}{candidate.kind === 'wait' ? ' · Rover position' : candidate.kind === 'recharge' ? ' · Base' : ''}</td>
           <td>{'target' in candidate ? `${candidate.routeEstimate.distanceCells} cells · ${seconds(candidate.routeEstimate.durationMs)} travel · ${candidate.routeEstimate.energy.toFixed(2)} energy${candidate.routeEstimate.stormDistanceCells !== undefined ? ` · ${candidate.routeEstimate.stormDistanceCells.toFixed(2)} cells in active storm` : ''}` : 'No travel'}</td>
           <td>{candidate.id === decision.selectedCandidateId ? 'Selected' : '—'}</td>
-          {decision.probabilities && <td>{(decision.probabilities[candidate.id]! * 100).toFixed(2)}%</td>}
+          <td>{decision.probabilities?.[candidate.id] === undefined ? 'Unavailable' : `${(decision.probabilities[candidate.id]! * 100).toFixed(2)}%`}</td>
         </tr>)}</tbody>
       </table></div>
       <ObservationTable title="Observations used" observations={input.observations} />
@@ -69,7 +70,7 @@ function DecisionEntry({ decision }: { decision: Decision }) {
   </details></li>;
 }
 
-export function DecisionTimeline({ decisions, controllerHistory }: { decisions: Decision[]; controllerHistory: ControllerHistoryEntry[] }) {
+export function DecisionTimeline({ decisions, controllerHistory, selectedDecisionId, onSelect }: { decisions: Decision[]; controllerHistory: ControllerHistoryEntry[]; selectedDecisionId?: number | null; onSelect?: (id: number) => void }) {
   return <section className="decision-timeline" aria-label="Decision timeline">
     <h3>Decision timeline <span>{decisions.length}</span></h3>
     <p className="memory-note">Baseline decisions use fixed rules. No model probabilities or reasoning are produced for baseline decisions. TypeSafe probabilities compare the offered choices; they are not utility, science score, a guarantee of correctness, or generated reasoning. A valid uncertain choice continues autonomously.</p>
@@ -81,7 +82,7 @@ export function DecisionTimeline({ decisions, controllerHistory }: { decisions: 
           <strong>{controllerLabels[controllerHistory[transitionIndex - 1]!.controller]} → {controllerLabels[transition.controller]}</strong>
           <p>{seconds(transition.atMs)} · Mission control explicitly continued after an inference failure or usage pause.</p>
         </li>}
-        <DecisionEntry decision={decision} />
+        <DecisionEntry decision={decision} selected={selectedDecisionId === decision.id} onSelect={onSelect} />
       </Fragment>;
     })}</ol>
       : <p className="memory-note">Decisions will appear when the expedition starts.</p>}

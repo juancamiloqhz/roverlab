@@ -37,6 +37,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
     setPanel(next);
   }
   function closePanel() {
+    dispatch({ type: 'end-inspection' });
     setPanel(null);
     setSelectedRecord(null);
     setComparison(null);
@@ -51,6 +52,14 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
     }
   }, [panel, selectedRecord, comparison]);
   const { status, currentAction, usage } = snapshot;
+  const selectedDecision = decisions.find(item => item.id === snapshot.inspectionDecisionId);
+  const mapDecision = selectedDecision ?? [...decisions].reverse().find(item => item.status === 'applied');
+  function inspectDecision(id?: number) {
+    const decisionId = id ?? decisions.at(-1)?.id;
+    if (decisionId) dispatch({ type: 'inspect-decision', decisionId });
+    else pauseForInspection();
+    openPanel('evidence');
+  }
   const active = status === 'running' || status === 'paused';
   const needsRecovery = active && !!(snapshot.usagePause || snapshot.decisionFailure);
   // Open once for each new guard/failure. Closing the panel never acknowledges it.
@@ -58,13 +67,14 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
   useEffect(() => { if (recoveryKey) setPanel('usage'); }, [recoveryKey]);
   useEffect(() => { if (status === 'ended') setPanel('results'); }, [status]);
   const decisionPhase = status === 'ended' ? 'Ended' : snapshot.usagePause ? 'Usage paused' : snapshot.decisionFailure ? 'Failed'
+    : selectedDecision ? 'Manual inspection' : snapshot.teachingMode && snapshot.heldDecisionId ? 'Teaching pause'
     : status === 'paused' ? 'Paused' : snapshot.decisionPending ? (snapshot.controller === 'typesafe' ? 'Jev choosing' : 'Controller choosing')
       : currentAction ? 'Code executing' : 'Ready';
   const statusLabel = snapshot.endingCondition === 'stranded' ? 'Rover stranded' : needsRecovery ? 'Expedition time frozen'
     : snapshot.decisionPending && active ? 'Decision pending · Expedition time frozen'
       : { ready: 'Ready to explore', running: 'Expedition running', paused: 'Expedition paused', ended: 'Expedition complete' }[status];
   const currentActionLabel = snapshot.decisionPending && active ? 'Awaiting decision'
-    : snapshot.usagePause && active ? 'Inference usage paused' : snapshot.decisionFailure && active ? 'Decision paused' : describeAction(currentAction, status).label;
+    : snapshot.usagePause && active ? 'Inference usage paused' : snapshot.decisionFailure && active ? 'Decision paused' : snapshot.heldDecisionId ? 'Choice held before execution' : describeAction(currentAction, status).label;
   const openRecord = (record: ExpeditionRecord) => { pauseForInspection(); setComparison(null); setSelectedRecord(record); setPanel('records'); };
   const compareRecords = (records: [ExpeditionRecord, ExpeditionRecord]) => { pauseForInspection(); setSelectedRecord(null); setComparison(records); setPanel('records'); };
   const returnToLive = () => { setComparison(null); setSelectedRecord(null); closePanel(); };
@@ -85,19 +95,20 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
       <FullscreenButton />
     </header>
     <main className="expedition-stage" aria-label="Live expedition workspace">
-      <ExpeditionScene snapshot={snapshot} getFullWorldView={getFullWorldView} />
+      <ExpeditionScene snapshot={snapshot} getFullWorldView={getFullWorldView} decision={mapDecision} historical={!!selectedDecision} onInspect={inspectDecision} />
       <div className="live-status" aria-label="Live expedition status"><span>LIVE · {controllerLabels[snapshot.controller]}</span><strong aria-label="Decision phase">{decisionPhase}</strong><span>{statusLabel}</span>{needsRecovery && <button className="secondary" onClick={() => openPanel('usage')}>Review recovery</button>}</div>
       <nav className="panel-navigation" aria-label="Expedition panels">{(Object.entries(panels) as [Panel, string][]).filter(([name]) => name !== 'results' || status === 'ended').map(([name, title]) =>
         <button className="secondary" id={`panel-${name}-button`} key={name} aria-expanded={panel === name} aria-controls="expedition-panel" onClick={() => panel === name ? closePanel() : openPanel(name)}>{title}</button>
       )}</nav>
-      <LatestDecision snapshot={snapshot} decisions={decisions} onInspect={() => { pauseForInspection(); openPanel('evidence'); }} />
+      <LatestDecision snapshot={snapshot} decisions={decisions} selectedDecision={selectedDecision} onInspect={inspectDecision} />
       <aside id="expedition-panel" className={`expedition-panel${panel === 'records' ? ' record-panel' : ''}`} aria-label="Expedition panel" hidden={!panel}>
         <div className="expedition-panel-heading"><h2>{panel ? panels[panel] : ''}</h2><button className="secondary" ref={closeButton} onClick={closePanel} aria-label="Close panel">Close</button></div>
         <div className="expedition-panel-body" ref={panelBody}>
           <div hidden={panel !== 'mission'}><MissionControl snapshot={snapshot} dispatch={dispatch} /></div>
           <div hidden={panel !== 'evidence'}>
-            <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} />
-            <RoverEvidence snapshot={snapshot} />
+            {selectedDecision && <button className="secondary" onClick={closePanel}>Return to live view</button>}
+            <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} selectedDecisionId={snapshot.inspectionDecisionId} onSelect={inspectDecision} />
+            {!selectedDecision && <RoverEvidence snapshot={snapshot} />}
           </div>
           <div hidden={panel !== 'usage'}>
             <InferenceUsagePause snapshot={snapshot} decisions={decisions} dispatch={dispatch} />
@@ -126,11 +137,14 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
         <div className="transport">
           {status === 'ready' && <button className="primary" onClick={() => { setPanel(null); dispatch({ type: 'start' }); }}>Start expedition</button>}
           {status === 'running' && <button className="primary" onClick={() => dispatch({ type: 'pause' })}>Pause expedition</button>}
-          {status === 'paused' && <button className="primary" disabled={needsRecovery} onClick={() => dispatch({ type: 'resume' })}>Resume expedition</button>}
+          {status === 'paused' && (selectedDecision ? <button className="primary" onClick={closePanel}>Return to live view</button>
+            : snapshot.teachingMode && snapshot.heldDecisionId ? <button className="primary" disabled={needsRecovery} onClick={() => dispatch({ type: 'continue-choice' })}>Continue selected action</button>
+              : <button className="primary" disabled={needsRecovery} onClick={() => dispatch({ type: 'resume' })}>Resume expedition</button>)}
           {status === 'ended' && <span className="complete-label">Expedition complete</span>}
           <button className="secondary" aria-label="Stop expedition" disabled={!active} onClick={() => dispatch({ type: 'stop' })}>Stop</button>
           <button className="secondary" aria-label="Reset expedition" onClick={() => { setPanel(null); setSelectedRecord(null); setComparison(null); dispatch({ type: 'reset' }); }}>Reset</button>
         </div>
+        <label className="teaching-control"><input type="checkbox" checked={!!snapshot.teachingMode} disabled={status === 'ended'} onChange={event => dispatch({ type: 'set-teaching-mode', enabled: event.target.checked })} />Teaching mode</label>
         <div className="execution-status"><small>CURRENT CODE ACTION</small><strong aria-label="Current action">{currentActionLabel}</strong></div>
         <div className="speed-control" role="group" aria-label="Playback speed"><span>Playback</span>{([1, 2, 4] as const).map(speed => <button key={speed} aria-pressed={snapshot.speed === speed} disabled={status === 'ended'} onClick={() => dispatch({ type: 'set-speed', speed })}>{speed}×</button>)}</div>
       </section>

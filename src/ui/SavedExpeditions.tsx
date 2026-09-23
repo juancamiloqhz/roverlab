@@ -10,6 +10,7 @@ import { ExpeditionResults } from './ExpeditionResults';
 import { controllerLabels } from './controllerLabels';
 import { createReplay, type ExpeditionSession } from '../simulation/expedition';
 import { ExpeditionReplay } from './ExpeditionReplay';
+import { ExpeditionScene } from '../scene/ExpeditionScene';
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Expedition records are unavailable. Please try again.';
 const mergeRecords = (existing: ExpeditionRecord[], added: ExpeditionRecord[]) =>
@@ -115,6 +116,8 @@ export function SavedExpeditions({ completedRecords, onOpen, onCompare, refreshI
 }
 
 export function SavedExpeditionView({ record, onClose }: { record: ExpeditionRecord; onClose: () => void }) {
+  const [selectedDecisionId, setSelectedDecisionId] = useState<number | null>(null);
+  const selectedDecision = record.decisions.find(item => item.id === selectedDecisionId);
   const [error, setError] = useState('');
   const [replay, setReplay] = useState<ExpeditionSession | null>(null);
   function startReplay() {
@@ -155,7 +158,8 @@ export function SavedExpeditionView({ record, onClose }: { record: ExpeditionRec
     <p>Final mission instructions: {record.results.instructions || 'None supplied.'} · Version {record.results.instructionsVersion}</p>
     <p>Delivery rubric: unrelated {record.results.rubric.unrelated}, suggestive {record.results.rubric.suggestive}, strong evidence {record.results.rubric['strong-evidence']}.</p>
     {!replay && <>
-      <DecisionTimeline decisions={record.decisions} controllerHistory={record.results.controllerHistory} />
+      {selectedDecision && <ExpeditionScene snapshot={record.results} decision={selectedDecision} historical onInspect={setSelectedDecisionId} />}
+      <DecisionTimeline decisions={record.decisions} controllerHistory={record.results.controllerHistory} selectedDecisionId={selectedDecisionId} onSelect={setSelectedDecisionId} />
       <ObservationTable title="Final observations" observations={record.results.observations} />
       <ObservationTable title="Final rover memory" observations={record.results.memory} />
     </>}

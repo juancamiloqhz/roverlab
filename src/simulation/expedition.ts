@@ -90,6 +90,9 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   let storm: DustStorm | null = null;
   let movementEnergyMultiplier = 1;
   let state: ExpeditionSnapshot = initialState();
+  // Inspection after completion is presentation state, never part of the saved
+  // result or of a late accounting update to that result.
+  let completedInspectionId: number | null = null;
   let pendingMs = 0;
   let previousAction: Action | null = null;
   let actionController = controller.id;
@@ -102,6 +105,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   function initialState(): ExpeditionSnapshot {
     const initialMission = { version: 0, preferences: structuredClone(mission) };
     return {
+      ...(!replay || replay.source.version >= 9 ? { teachingMode: false, inspectionDecisionId: null, heldDecisionId: null } : {}),
       ...(startingConditions.mission ? { mission: { requested: structuredClone(initialMission), effective: structuredClone(initialMission),
         history: [{ ...structuredClone(initialMission), requestedAtMs: 0, appliedAtMs: 0 }] } } : {}),
       ...(startingConditions.inferenceLimits ? { inferenceLimits: structuredClone(startingConditions.inferenceLimits), acknowledgedAttemptIds: [], usagePause: null } : {}),
@@ -184,9 +188,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     state.usagePause = null;
     record({ type: 'inference-continued' });
     state.decisionFailure = null;
-    state.status = 'running';
-    if (!state.currentAction && !state.reconsiderationReason) requestReconsideration('retry');
+    state.status = viewingPause() ? 'paused' : 'running';
+    if (!state.currentAction && !state.heldDecisionId && !state.reconsiderationReason) requestReconsideration('retry');
     record({ type: 'resumed' });
+    if (state.status === 'running') executeHeldChoice();
     selectAction();
   }
 
@@ -220,7 +225,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   }
 
   function selectAction() {
-    if (inFlight || state.status !== 'running' || state.currentAction || state.decisionFailure) return;
+    if (inFlight || state.status !== 'running' || state.currentAction || state.heldDecisionId || state.inspectionDecisionId || state.decisionFailure) return;
     if (checkUsageGuard()) return;
     if (replay && replay.next?.type !== 'decision-requested' && replay.next?.type !== 'mission-applied') return;
     applyMission();
@@ -356,6 +361,16 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       decisionId: decision.id, selectedCandidateId: action.id, latencyMs, inferenceAttempts: decision.inferenceAttempts,
       probabilities: decision.probabilities, confidence: decision.confidence,
       ...(decision.baseline ? { baseline: decision.baseline } : {}) });
+    if (state.teachingMode !== undefined && (state.teachingMode || state.status === 'paused' || state.inspectionDecisionId)) {
+      state.heldDecisionId = decision.id;
+      state.status = 'paused';
+      pendingMs = 0;
+      record({ type: 'decision-held', decisionId: decision.id });
+    } else startAction(action);
+    checkUsageGuard();
+  }
+
+  function startAction(action: Action) {
     state.currentAction = action;
     actionController = controller.id;
     actionProgressMs = 0;
@@ -365,10 +380,33 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       waypointStart = { ...state.rover.position };
     }
     record({ type: 'action-started', action, controller: controller.id });
-    checkUsageGuard();
+  }
+
+  function viewingPause() {
+    return !!state.inspectionDecisionId || !!(state.teachingMode && state.heldDecisionId);
+  }
+
+  function clearHeldChoice(reason: 'executed' | 'invalidated') {
+    if (!state.heldDecisionId) return;
+    record({ type: 'held-decision-cleared', decisionId: state.heldDecisionId, reason });
+    state.heldDecisionId = null;
+  }
+
+  function executeHeldChoice() {
+    if (!state.heldDecisionId) return;
+    const decision = decisions.find(item => item.id === state.heldDecisionId)!;
+    const candidate = availableCandidates().find(item => item.id === decision.selectedCandidateId);
+    if (decision.input.instructionsVersion !== state.instructionsVersion || !candidate || !sameRecordData(candidate, decision.action)) {
+      clearHeldChoice('invalidated');
+      requestReconsideration('retry');
+      return;
+    }
+    clearHeldChoice('executed');
+    startAction(candidate);
   }
 
   function invalidateDecision() {
+    clearHeldChoice('invalidated');
     if (inFlight && inFlight.decision.status === 'pending') {
       state.decisionRevision++;
       if (meaningfulBoundaries && inFlight.expedition === expedition) {
@@ -384,7 +422,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
 
   function resumeAfterDecisionFailure(reason: 'retry' | 'controller-changed') {
     state.decisionFailure = null;
-    state.status = 'running';
+    state.status = viewingPause() ? 'paused' : 'running';
     requestReconsideration(reason);
     record({ type: 'resumed' });
     reconsiderAtWaypoint();
@@ -496,6 +534,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
 
   function finish(condition: EndingCondition) {
     invalidateDecision();
+    if (state.inspectionDecisionId) {
+      state.inspectionDecisionId = null;
+      record({ type: 'inspection-ended' });
+    }
     state.reconsiderationReason = null;
     pendingTriggers.clear();
     if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: actionController });
@@ -508,7 +550,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 8, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 9, id: expeditionId, completedAt: new Date().toISOString(),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();
@@ -603,7 +645,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   sense();
 
   const session = {
-    getSnapshot: () => structuredClone(state),
+    getSnapshot: () => structuredClone(completedInspectionId ? { ...state, inspectionDecisionId: completedInspectionId } : state),
     refreshInferenceUsage() {
       refreshingUsage ??= Promise.all(usageReads.map(read => read().catch(() => {}))).then(() => {}).finally(() => { refreshingUsage = null; });
       return refreshingUsage;
@@ -638,6 +680,30 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       discoveryCount: state.discoveryCount, inspectionCount: state.inspectionCount,
     } }),
     dispatch(command: ExpeditionCommand) {
+      if (command.type === 'set-teaching-mode' && state.teachingMode !== undefined && state.status !== 'ended' && state.teachingMode !== command.enabled) {
+        state.teachingMode = command.enabled;
+        record({ type: 'teaching-changed', enabled: command.enabled });
+      } else if (command.type === 'inspect-decision' && state.inspectionDecisionId !== undefined
+        && decisions.some(item => item.id === command.decisionId) && state.inspectionDecisionId !== command.decisionId) {
+        if (state.status === 'ended') completedInspectionId = command.decisionId;
+        else {
+          state.inspectionDecisionId = command.decisionId;
+          state.status = 'paused';
+          pendingMs = 0;
+          record({ type: 'decision-inspected', decisionId: command.decisionId });
+        }
+      } else if (command.type === 'end-inspection' && completedInspectionId) {
+        completedInspectionId = null;
+      } else if (command.type === 'end-inspection' && state.inspectionDecisionId) {
+        state.inspectionDecisionId = null;
+        if (state.status !== 'ended') record({ type: 'inspection-ended' });
+      } else if (command.type === 'continue-choice' && state.status === 'paused' && state.heldDecisionId
+        && !state.inspectionDecisionId && !state.decisionFailure && !state.usagePause && !checkUsageGuard()) {
+        state.status = 'running';
+        record({ type: 'resumed' });
+        executeHeldChoice();
+        selectAction();
+      }
       if (command.type === 'set-instructions' && command.instructions.length > MAX_MISSION_INSTRUCTIONS_LENGTH) {
         throw new RangeError('Mission instructions must be 20,000 characters or fewer.');
       }
@@ -697,6 +763,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         resumeAfterDecisionFailure('retry');
       } else if (command.type === 'continue-with-baseline' && state.status === 'paused' && (state.decisionFailure || state.usagePause)
         && controller.id === 'typesafe' && !inFlight) {
+        clearHeldChoice('invalidated');
         record({ type: 'controller-changed', from: controller.id, to: baseline.id,
           ...(state.decisionFailure ? { failure: state.decisionFailure } : {}), ...(state.usagePause ? { usagePause: state.usagePause } : {}) });
         if (state.inferenceLimits) state.usagePause = null;
@@ -704,9 +771,10 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         state.controller = controller.id;
         state.controllerHistory.push({ controller: controller.id, atMs: state.elapsedMs, firstDecisionId: decisions.length + 1 });
         resumeAfterDecisionFailure('controller-changed');
-      } else if (command.type === 'resume' && state.status === 'paused' && !state.decisionFailure && !state.usagePause && !checkUsageGuard()) {
+      } else if (command.type === 'resume' && state.status === 'paused' && !viewingPause() && !state.decisionFailure && !state.usagePause && !checkUsageGuard()) {
         state.status = 'running';
         record({ type: 'resumed' });
+        executeHeldChoice();
         selectAction();
       } else if (command.type === 'stop' && (state.status === 'running' || state.status === 'paused')) {
         finish('manual-stop');
@@ -725,6 +793,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         storm = null;
         movementEnergyMultiplier = 1;
         state = initialState();
+        completedInspectionId = null;
         pendingMs = 0;
         previousAction = null;
         actionController = controller.id;
@@ -738,7 +807,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Wall time is supplied by a scheduler, never by rendering or camera frames.
     advanceWallTime(deltaMs: number) {
       if (!Number.isFinite(deltaMs) || deltaMs < 0) throw new RangeError('Wall time must be finite and non-negative.');
-      if (state.status !== 'running' || state.decisionPending) return;
+      if (state.status !== 'running' || state.decisionPending || viewingPause()) return;
       pendingMs += deltaMs * state.speed;
       while (pendingMs + 1e-7 >= STEP_MS && state.status === 'running' && !state.decisionPending) {
         pendingMs -= STEP_MS;
@@ -747,17 +816,23 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     },
   };
 
-  function consumeReplayEvents() {
+  function consumeReplayEvents(stopAfterChoice = false): number | undefined {
     while (replay?.next && replay.next.atMs === state.elapsedMs) {
       const event = replay.next;
       switch (event.type) {
+        case 'teaching-changed': session.dispatch({ type: 'set-teaching-mode', enabled: event.enabled }); break;
+        case 'decision-inspected': session.dispatch({ type: 'inspect-decision', decisionId: event.decisionId }); break;
+        case 'inspection-ended': session.dispatch({ type: 'end-inspection' }); break;
+        case 'held-decision-cleared':
+          if (event.reason !== 'invalidated') throw new Error('Cannot replay a held choice without continuation.');
+          clearHeldChoice('invalidated'); break;
         case 'inference-limits-changed': session.dispatch({ type: 'set-inference-limits', limits: event.limits }); break;
         case 'usage-acknowledged': session.dispatch({ type: 'acknowledge-usage', attemptIds: event.attemptIds }); break;
         case 'usage-paused': checkUsageGuard(); break;
         case 'inference-continued': session.dispatch({ type: 'continue-inference' }); break;
         case 'started': session.dispatch({ type: 'start' }); break;
         case 'paused': session.dispatch({ type: 'pause' }); break;
-        case 'resumed': session.dispatch({ type: state.decisionFailure ? 'retry-decision' : 'resume' }); break;
+        case 'resumed': session.dispatch({ type: state.decisionFailure ? 'retry-decision' : state.heldDecisionId ? 'continue-choice' : 'resume' }); break;
         case 'speed-changed': session.dispatch({ type: 'set-speed', speed: event.speed }); break;
         case 'objective-selected': session.dispatch({ type: 'set-objective', objective: event.objective }); break;
         case 'mission-changed':
@@ -806,18 +881,21 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         default: throw new Error(`Cannot replay this expedition: unsupported ${event.type} event at ${event.atMs} ms.`);
       }
       if (replay.next === event) throw new Error(`Cannot replay this expedition: ${event.type} cannot execute at ${event.atMs} ms.`);
+      if (stopAfterChoice && event.type === 'decision-made') return event.decisionId;
     }
     if (replay && !replay.next && (!sameRecordData(state, replay.source.results) || !sameRecordData(decisions, replay.source.decisions))) {
       throw new Error('Cannot replay this expedition: simulated results differ from the saved results.');
     }
   }
 
-  return { session, consumeReplayEvents, advanceReplay() {
+  return { session, consumeReplayEvents, advanceReplay(stopAfterChoice = false): number | undefined {
+    const choice = consumeReplayEvents(stopAfterChoice);
+    if (choice || !replay?.next) return choice;
     if (state.status !== 'running' || state.decisionPending || !state.currentAction) {
       throw new Error('Cannot replay this expedition: the recorded history cannot advance.');
     }
     session.advanceWallTime(STEP_MS / state.speed);
-    consumeReplayEvents();
+    return consumeReplayEvents(stopAfterChoice);
   } };
 }
 
@@ -837,9 +915,18 @@ export function createReplay(value: unknown): ExpeditionSession {
   let speed: PlaybackSpeed = 1;
   let pendingMs = 0;
   let stopped = false;
+  let teachingMode: boolean | undefined;
+  let heldDecisionId: number | null = null;
+  let inspectionDecisionId: number | null = null;
+  function afterAdvance(choice?: number) {
+    if (choice) { heldDecisionId = choice; status = 'paused'; pendingMs = 0; }
+    else if (!history.next) status = 'ended';
+  }
   return {
     getSnapshot() {
       const snapshot = { ...simulation.session.getSnapshot(), status, speed };
+      if (teachingMode !== undefined) { snapshot.teachingMode = teachingMode; snapshot.heldDecisionId = heldDecisionId; }
+      if (inspectionDecisionId) snapshot.inspectionDecisionId = inspectionDecisionId;
       if (stopped) { snapshot.currentAction = null; snapshot.reconsiderationReason = null; snapshot.endingCondition = 'manual-stop'; }
       return snapshot;
     },
@@ -852,18 +939,30 @@ export function createReplay(value: unknown): ExpeditionSession {
     onUsageUpdated: () => () => {},
     refreshInferenceUsage: async () => {},
     dispatch(command) {
-      if (command.type === 'start' && status === 'ready') {
+      if (command.type === 'set-teaching-mode' && status !== 'ended') teachingMode = command.enabled;
+      else if (command.type === 'inspect-decision' && simulation.session.getDecisions().some(item => item.id === command.decisionId)) {
+        inspectionDecisionId = command.decisionId;
+        if (status !== 'ended') status = 'paused';
+        pendingMs = 0;
+      } else if (command.type === 'end-inspection') inspectionDecisionId = null;
+      else if (command.type === 'continue-choice' && status === 'paused' && heldDecisionId && !inspectionDecisionId) {
+        heldDecisionId = null; status = 'running';
+        afterAdvance(simulation.consumeReplayEvents(teachingMode));
+      } else if (command.type === 'start' && status === 'ready') {
         status = 'running';
-        simulation.consumeReplayEvents();
-        if (!history.next) status = 'ended';
+        afterAdvance(simulation.consumeReplayEvents(teachingMode));
       } else if (command.type === 'pause' && status === 'running') status = 'paused';
-      else if (command.type === 'resume' && status === 'paused') status = 'running';
+      else if (command.type === 'resume' && status === 'paused' && !inspectionDecisionId && !(teachingMode && heldDecisionId)) {
+        heldDecisionId = null; status = 'running';
+        afterAdvance(simulation.consumeReplayEvents(teachingMode));
+      }
       else if (command.type === 'set-speed' && status !== 'ended') speed = command.speed;
-      else if (command.type === 'stop' && (status === 'running' || status === 'paused')) { status = 'ended'; stopped = true; }
+      else if (command.type === 'stop' && (status === 'running' || status === 'paused')) { status = 'ended'; stopped = true; heldDecisionId = null; inspectionDecisionId = null; }
       else if (command.type === 'reset') {
         history = new ReplayHistory(source);
         simulation = createSimulation({}, history);
         status = 'ready'; speed = 1; pendingMs = 0; stopped = false;
+        heldDecisionId = null; inspectionDecisionId = null;
       }
     },
     advanceWallTime(deltaMs) {
@@ -872,8 +971,7 @@ export function createReplay(value: unknown): ExpeditionSession {
       pendingMs += deltaMs * speed;
       while (pendingMs + 1e-7 >= STEP_MS && status === 'running') {
         pendingMs -= STEP_MS;
-        simulation.advanceReplay();
-        if (!history.next) status = 'ended';
+        afterAdvance(simulation.advanceReplay(teachingMode));
       }
     },
   };

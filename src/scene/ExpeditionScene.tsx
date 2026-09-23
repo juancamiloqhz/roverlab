@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import type { ExpeditionSnapshot, FullWorldView, StormObservation } from '../simulation/types';
+import type { Decision, ExpeditionSnapshot, FullWorldView, StormObservation } from '../simulation/types';
+import { DecisionTargets } from './DecisionTargets';
+import { formatTime } from '../ui/formatTime';
 import { Rover } from './Rover';
 import { SceneCamera, type CameraMode } from './SceneCamera';
 
@@ -78,25 +80,33 @@ function PlanetaryArea({ snapshot, fullWorld }: { snapshot: ExpeditionSnapshot; 
   );
 }
 
-export function ExpeditionScene({ snapshot, getFullWorldView }: {
-  snapshot: ExpeditionSnapshot; getFullWorldView(): FullWorldView;
+export function ExpeditionScene({ snapshot: liveSnapshot, getFullWorldView, decision, historical = false, onInspect }: {
+  snapshot: ExpeditionSnapshot; getFullWorldView?: () => FullWorldView; decision?: Decision; historical?: boolean; onInspect?: (id: number) => void;
 }) {
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
   const [showCoverage, setShowCoverage] = useState(true);
   const [showFullWorld, setShowFullWorld] = useState(false);
-  const fullWorld = showFullWorld ? getFullWorldView() : null;
+  const fullWorld = showFullWorld && !historical && getFullWorldView ? getFullWorldView() : null;
+  // Only recorded knowledge supplies the historical map. No live samples,
+  // resource values or debugging truth are added to this projection.
+  const snapshot = historical && decision ? { ...liveSnapshot,
+    observations: decision.input.observations, memory: decision.input.memory, sensorRange: decision.input.sensorRange,
+    elapsedMs: decision.input.atMs, currentAction: null,
+    rover: { position: decision.input.position, heading: 0, distance: 0 },
+  } : liveSnapshot;
   return (
     <section className="scene" aria-label="Planetary scene">
-      <div className="scene-top"><span className="map-tag">OB–01 <span>{showFullWorld ? 'Full-world view · DEBUG' : 'Rover knowledge'}</span></span><span className="map-north">N ↑</span></div>
+      <div className="scene-top"><span className="map-tag">OB–01 <span>{fullWorld ? 'Full-world view · DEBUG' : historical ? 'Recorded rover knowledge' : 'Rover knowledge'}</span></span><span className="map-north">N ↑</span></div>
       <div className="scene-controls" role="group" aria-label="Observation controls">
         <div className="camera-controls" role="group" aria-label="Camera perspective">
           <button aria-pressed={cameraMode === 'orbit'} onClick={() => setCameraMode('orbit')}>Orbit camera</button>
           <button aria-pressed={cameraMode === 'follow'} onClick={() => setCameraMode('follow')}>Follow rover</button>
         </div>
         <label><input type="checkbox" checked={showCoverage} onChange={event => setShowCoverage(event.target.checked)} />Sensor coverage</label>
-        <label><input type="checkbox" checked={showFullWorld} onChange={event => setShowFullWorld(event.target.checked)} />Full-world debugging view</label>
+        <label><input type="checkbox" checked={!!fullWorld} disabled={historical || !getFullWorldView} onChange={event => setShowFullWorld(event.target.checked)} />Full-world debugging view</label>
       </div>
-      {showFullWorld && <p className="debug-notice">Hidden terrain and objects revealed. Rover knowledge is unchanged.</p>}
+      {decision && <p className="decision-map-context" aria-label="Decision map context">Decision {decision.id} · {formatTime(decision.input.atMs)} · {historical ? 'Recorded knowledge and rover position' : 'Recorded targets over live world'}. ◆ Selected · ○ Offered</p>}
+      {fullWorld && <p className="debug-notice">Hidden terrain and objects revealed. Rover knowledge is unchanged.</p>}
       {showCoverage && <div className="sensor-legend">Sensor radius · <strong aria-label="Sensor coverage radius">{snapshot.sensorRange} cells</strong></div>}
       <Canvas shadows camera={{ position: [29, 27, 34], fov: 43 }} dpr={[1, 2]} fallback={<p className="webgl-fallback">A WebGL-capable browser is needed to display the planetary scene.</p>}>
         <color attach="background" args={['#bc9675']} />
@@ -108,14 +118,15 @@ export function ExpeditionScene({ snapshot, getFullWorldView }: {
           <mesh><circleGeometry args={[snapshot.sensorRange, 96]} /><meshBasicMaterial color="#9aeae6" transparent opacity={0.12} depthWrite={false} /></mesh>
           <mesh position={[0, 0, 0.002]}><ringGeometry args={[Math.max(0, snapshot.sensorRange - 0.04), snapshot.sensorRange, 96]} /><meshBasicMaterial color="#c5ffff" transparent opacity={0.85} depthWrite={false} /></mesh>
         </group>}
-        {snapshot.currentAction && 'target' in snapshot.currentAction && <group position={[snapshot.currentAction.target.position.x, 0.045, snapshot.currentAction.target.position.z]}>
+        {decision && <DecisionTargets decision={decision} onInspect={onInspect} />}
+        {!decision && snapshot.currentAction && 'target' in snapshot.currentAction && <group position={[snapshot.currentAction.target.position.x, 0.045, snapshot.currentAction.target.position.z]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.4, 0.44, 32]} /><meshBasicMaterial color="#fff0c7" /></mesh>
           <Html position={[0, 0.45, 0]} center zIndexRange={[9, 0]}><span className="target-label active">{snapshot.currentAction.target.label}</span></Html>
         </group>}
         <Rover rover={snapshot.rover} />
         <SceneCamera mode={cameraMode} position={snapshot.rover.position} area={snapshot.area} />
       </Canvas>
-      <div className="scene-bottom"><span>{showFullWorld ? 'DEBUG · Full world visible' : 'Bright: in range · Dim: remembered · Dark: unknown'}</span><span>{cameraMode === 'follow' ? 'Following rover · Drag to look around' : 'Drag to orbit'} · Scroll to zoom</span></div>
+      <div className="scene-bottom"><span>{fullWorld ? 'DEBUG · Full world visible' : 'Bright: in range · Dim: remembered · Dark: unknown'}</span><span>{cameraMode === 'follow' ? 'Following rover · Drag to look around' : 'Drag to orbit'} · Scroll to zoom</span></div>
     </section>
   );
 }

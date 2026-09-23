@@ -21,7 +21,13 @@ A local 3D sandbox with one rover, a 42 × 38 authored area, a charging base, tw
 
 Open **Mission**, **Evidence**, **Usage & recovery**, or **Saved expeditions** for the existing controls and records. **Inspect decisions** pauses the live expedition; closing a panel does not resume it. Usage pauses and failures open their recovery controls, and **Review recovery** reopens them. Completed expeditions open **Results** and still save automatically even when the records panel is closed. Saved inspection, replay, and comparison identify historical usage; the top telemetry continues to identify the live expedition.
 
-Panels support Tab, Enter, and Escape, with focus returning to the opener when closed. On narrow screens, panels scroll above the persistent pause, stop, reset, and speed controls. Orbit, follow, sensor coverage, and full-world debugging remain available. **Fullscreen** requests browser fullscreen only on a click; unavailable or rejected requests leave the normal window usable. Spatial decision selection and teaching mode remain later work.
+Panels support Tab, Enter, and Escape, with focus returning to the opener when closed. On narrow screens, panels scroll above the persistent pause, stop, reset, and speed controls. Orbit, follow, sensor coverage, and full-world debugging remain available. **Fullscreen** requests browser fullscreen only on a click; unavailable or rejected requests leave the normal window usable.
+
+[Jev decision lab ticket 09](.scratch/jev-decision-lab/issues/09-inspect-decisions-spatially-and-use-teaching-mode.md) links numbered map targets to the decision card, timeline, and complete action table. Diamonds and text identify the selected target; circles identify offered targets. Wait identifies the recorded rover position and recharge identifies base. Selecting a decision pauses the session and shows that decision's original observations, memory, resources, probabilities, and usage. Historical maps disable full-world debugging. The top telemetry continues to describe the live expedition. Return to live view leaves the expedition paused until explicit continuation.
+
+**Teaching mode** holds each completed controller choice before its action starts. **Continue selected action** executes it once, provided it is still valid and no inspection, usage guard, or failure blocks it. A pending result can settle during inspection without resuming time. Mission edits and detected storms invalidate held choices; stop and reset clear them. Ordinary viewing continues automatically regardless of a valid choice's probability. Explanations describe planned code execution and recorded route estimates, not completed outcomes or Jev's reasoning.
+
+Version 9 records retain teaching changes, inspected decisions, held choices, continuation, and invalidation. Saved records and replay support spatial inspection without inference or changes to source exports. Replay has its own teaching control. Versions 1 through 8 remain supported under their original rules, with missing evidence shown as unavailable. Same-state baseline comparison remains ticket 10.
 
 ## Stack
 
@@ -58,6 +64,7 @@ bun test tests/energy.test.ts     # terrain costs, multiple trips, recharge, dep
 bun test tests/storm.test.ts    # disclosure, sensing, crossing/detours, expiry, safe reconsideration, and frozen time
 bun test tests/mission.test.ts   # exclusive presets, shared SDK input, safe boundaries, history, and legacy replay
 bun test tests/decisions.test.ts # instruction edits, safe reconsideration, pending decisions, and stale results
+bun test tests/decision-viewing.test.ts # inspection, teaching, held-choice validity, guards, and legacy replay
 bun test tests/cadence.test.ts # provider request counts, coalesced triggers, resource boundaries, and legacy cadence
 bun test tests/records.test.ts # completed histories, JSON validation, reset isolation, and inference settlement
 bun test tests/replay.test.ts # recorded execution, playback independence, controller histories, and incompatible records

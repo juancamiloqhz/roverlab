@@ -3,7 +3,7 @@ import type { Action, ExpeditionSnapshot } from '../simulation/types';
 export function describeAction(action: Action | null, status: ExpeditionSnapshot['status']) {
   switch (action?.kind) {
     case 'explore': return {
-      label: `Explore · ${action.target.label}`, description: 'Following a grid route to the next target.',
+      label: `Explore · ${action.target.label}`, description: 'Follow a grid route to the target and sense along the route.',
     };
     case 'inspect': return {
       label: `Inspect · ${action.target.label}`, description: 'Travel to the sample, then examine it for six seconds to reveal its properties.',
@@ -15,7 +15,7 @@ export function describeAction(action: Action | null, status: ExpeditionSnapshot
       label: 'Return to base', description: 'Travel to base. Cargo unloads automatically; recharging is a separate action.',
     };
     case 'recharge': return {
-      label: 'Recharge at base', description: 'Replenishing the battery. Expedition time continues; accumulated energy use is preserved.',
+      label: 'Recharge at base', description: 'Replenish the battery at base. Expedition time continues; accumulated energy use is preserved.',
     };
     case 'wait': return {
       label: `Wait · ${action.durationMs / 1_000} seconds`, description: 'A bounded pause. Expedition time continues.',

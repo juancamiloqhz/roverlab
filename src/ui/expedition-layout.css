@@ -148,5 +148,26 @@ body { min-width: 320px; }
   .live-telemetry { gap: 5px; }
 }
 .expedition-shell button, .expedition-shell label { touch-action: manipulation; }
+.compact-timeline button { width: 100%; min-height: 40px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
+.compact-timeline button[aria-pressed="true"] { outline: 2px solid #c1e2ad; outline-offset: 4px; }
+.teaching-control { display: flex; gap: 6px; align-items: center; font-size: 11px; white-space: nowrap; }
+.teaching-control input { accent-color: #b8d9a4; }
+.decision-target-group { display: flex; flex-direction: column; gap: 3px; align-items: center; }
+.decision-target { min-height: 28px; padding: 5px 7px; white-space: nowrap; font-size: 10px; color: #e3f7f7; background: #142d30ee; border: 1px solid #9fe5e6; border-radius: 14px; }
+.decision-target.selected { border: 2px solid #fff3ba; border-radius: 2px; color: #fff3ba; font-weight: 600; }
+.decision-target:focus-visible { outline: 3px solid white; outline-offset: 3px; }
+.decision-map-context { position: absolute; z-index: 20; top: 115px; left: 20px; max-width: calc(100% - 40px); padding: 7px 10px; background: #172325ee; border-radius: 5px; font-size: 10px; color: #dce7d8; pointer-events: none; }
+.expedition-stage > .scene .decision-map-context { top: 165px; max-width: min(530px, calc(100% - 48px)); }
+.expedition-stage > .scene .debug-notice { top: 215px; }
+@media (min-width: 701px) and (max-width: 1150px) { .expedition-stage > .scene .decision-map-context { top: 207px; } .expedition-stage > .scene .debug-notice { top: 252px; } }
+@media (max-width: 700px) {
+  .decision-target { min-height: 36px; font-size: 9px; }
+  .expedition-stage > .scene .decision-map-context { top: 206px; left: 12px; max-width: calc(100% - 24px); font-size: 9px; }
+  .expedition-stage > .scene:has(.decision-map-context) .sensor-legend { display: none; }
+  .expedition-stage > .scene .debug-notice { top: 269px; }
+  .live-controls .teaching-control { position: absolute; right: 8px; top: -34px; padding: 7px 10px; border: 1px solid #617667; border-radius: 5px; background: #172325fa; }
+  .decision-overlay, .expedition-panel { bottom: 146px; }
+  .expedition-panel { top: 254px; }
+}
 @media (min-width: 1151px) { .record-panel { top: 180px; } }
 @media (min-width: 701px) and (max-width: 1150px) { .expedition-panel { top: 225px; } }

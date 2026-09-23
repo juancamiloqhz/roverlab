@@ -36,6 +36,9 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
   let activeAction: Action | null = null;
   let actionController = controller;
   let selectedAction: Action | null = null;
+  let teachingMode = false;
+  let inspectionDecisionId: number | null = null;
+  let heldDecisionId: number | null = null;
   const decisions = new Map<number, Decision>();
   const invalid = new Set<number>();
   const history: ControllerHistoryEntry[] = [];
@@ -43,6 +46,28 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
   for (const event of record.events) {
     if (ended && event.type !== 'decision-settled' && !(record.version >= 3 && event.type === 'inference-accounted')) return false;
     switch (event.type) {
+      case 'teaching-changed':
+        if (teachingMode === event.enabled) return false;
+        teachingMode = event.enabled;
+        break;
+      case 'decision-inspected':
+        if (!decisions.has(event.decisionId) || inspectionDecisionId === event.decisionId) return false;
+        inspectionDecisionId = event.decisionId;
+        break;
+      case 'inspection-ended':
+        if (!inspectionDecisionId) return false;
+        inspectionDecisionId = null;
+        break;
+      case 'decision-held':
+        if (heldDecisionId || !selectedAction || event.decisionId !== decisions.size) return false;
+        heldDecisionId = event.decisionId;
+        break;
+      case 'held-decision-cleared':
+        if (heldDecisionId !== event.decisionId) return false;
+        if (event.reason === 'executed' && inspectionDecisionId) return false;
+        if (event.reason === 'invalidated') selectedAction = null;
+        heldDecisionId = null;
+        break;
       case 'inference-limits-changed':
         if (!limits || pendingId !== null || (started && (!usagePause
           || event.limits.providerAttempts < limits.providerAttempts || event.limits.estimatedCost < limits.estimatedCost))) return false;
@@ -177,7 +202,7 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
         break;
       }
       case 'action-started':
-        if (activeAction || !selectedAction || event.controller !== controller || !sameRecordData(event.action, selectedAction)) return false;
+        if (heldDecisionId || activeAction || !selectedAction || event.controller !== controller || !sameRecordData(event.action, selectedAction)) return false;
         activeAction = event.action;
         actionController = event.controller;
         selectedAction = null;
@@ -198,5 +223,6 @@ export function hasConsistentHistory(record: ExpeditionRecord): boolean {
     && sameRecordData([...decisions.values()], record.decisions) && sameRecordData(history, final.controllerHistory)
     && controller === final.controller && objective === final.objective && attempts === final.inferenceAttempts
     && sameRecordData(mission, final.mission)
+    && (record.version < 9 || (teachingMode === final.teachingMode && !heldDecisionId && !inspectionDecisionId))
     && instructions === final.instructions && instructionsVersion === final.instructionsVersion;
 }
