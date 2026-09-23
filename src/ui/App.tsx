@@ -67,6 +67,18 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
     else document.getElementById('panel-mission-button')?.focus();
   }
   useEffect(() => {
+    if (!panel || guidedRecords) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
+        event.preventDefault();
+        closePanel();
+      }
+    };
+    // Disabling a focused control can move focus to body, outside this app's div.
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  });
+  useEffect(() => {
     if (panel) {
       closeButton.current?.focus();
       panelBody.current?.scrollTo({ top: 0 });
@@ -107,9 +119,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
   };
 
   if (guidedRecords) return <GuidedReplay records={guidedRecords} onClose={() => setGuidedRecords(null)} />;
-  return <div className={`expedition-shell${panel ? ' panel-open' : ''}${panel === 'records' ? ' records-open' : ''}`} onKeyDown={event => {
-    if (event.key === 'Escape' && panel) { event.preventDefault(); closePanel(); }
-  }}>
+  return <div className={`expedition-shell${panel ? ' panel-open' : ''}${panel === 'records' ? ' records-open' : ''}`}>
     <header className="expedition-header">
       <div className="lab-brand"><h1>RoverLab</h1><span>PLANETARY DECISION LAB</span></div>
       <section className="live-telemetry" aria-label="Live expedition telemetry">

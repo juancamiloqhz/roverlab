@@ -77,3 +77,21 @@ test('manual storm and mission history stays readable on a narrow screen and aft
   await expect(archived.getByText('Manual · Requested at 00:01.3', { exact: true })).toHaveCount(2);
   await expect(archived).toContainText('Not applied before expedition ended');
 });
+
+test('Escape closes the panel after applying a schedule disables its focused button', async ({ page }) => {
+  let calls = 0;
+  await page.route('**/api/**', route => { calls++; return route.abort(); });
+  await page.goto('/');
+  await openPanel(page, 'Mission');
+  const apply = page.getByRole('button', { name: 'Use example schedule', exact: true });
+  await apply.focus();
+  await page.keyboard.press('Enter');
+  await expect(apply).toBeDisabled();
+  // Disabling the active button moves focus outside the React app in Chromium.
+  // Wait for that state so Escape cannot accidentally beat the focus loss.
+  await expect(page.locator('body')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('complementary', { name: 'Expedition panel' })).toBeHidden();
+  await expect(page.getByRole('navigation', { name: 'Expedition panels' }).getByRole('button', { name: 'Mission', exact: true })).toBeFocused();
+  expect(calls).toBe(0);
+});
