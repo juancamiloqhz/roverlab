@@ -189,3 +189,21 @@ body { min-width: 320px; }
 .intervention-schedule blockquote { margin: 10px 0; white-space: pre-wrap; }
 .intervention-schedule summary { cursor: pointer; }
 .intervention-schedule summary:focus-visible { outline: 2px solid #b8efc6; outline-offset: 3px; }
+
+.lab-entry button { margin: 6px 8px 0 0; }
+.guide-copy { font-size: 14px; line-height: 1.65; }
+.guided-shell .expedition-panel-heading h2 { font-size: 19px; }
+.guided-shell .expedition-panel-heading h2:focus { outline: none; }
+.guided-shell .expedition-panel { top: 215px; }
+.guided-shell .live-status { max-width: calc(100% - 580px); }
+.guide-controls { justify-content: space-between; }
+@media (max-width: 1150px) { .guided-shell .live-status { max-width: calc(100% - 48px); } .guided-shell .expedition-panel { top: 250px; } }
+@media (max-width: 700px) {
+  .guided-shell .expedition-panel { top: 254px; bottom: 120px; }
+  .guided-shell .live-status { max-width: calc(100% - 24px); }
+  .guided-shell .guide-controls { min-height: 100px; }
+  .guide-controls .transport { order: -1; }
+  .guide-controls > button { font-size: 10px; padding: 8px; }
+  .guide-copy { font-size: 12px; }
+  .lab-entry button { min-height: 36px; font-size: 11px; }
+}

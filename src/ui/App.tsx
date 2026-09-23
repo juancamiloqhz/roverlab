@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createReplay } from '../simulation/expedition';
 import type { ExpeditionSession } from '../simulation/expedition';
 import type { ExpeditionRecord } from '../simulation/types';
 import { ExpeditionScene } from '../scene/ExpeditionScene';
@@ -17,6 +18,8 @@ import { describeAction } from './describeAction';
 import { formatTime } from './formatTime';
 import { useExpedition } from './useExpedition';
 import { controllerLabels } from './controllerLabels';
+import { GuidedReplay } from './GuidedReplay';
+import { importExpeditionRecord } from '../records/contract';
 import './styles.css';
 import './expedition-layout.css';
 
@@ -25,6 +28,22 @@ type Panel = keyof typeof panels;
 
 export function App({ createSession }: { createSession?: () => ExpeditionSession } = {}) {
   const { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, selectBenchmark, startMatchedBaseline, getFullWorldView } = useExpedition(createSession);
+  const [guidedRecords, setGuidedRecords] = useState<[ExpeditionRecord, ExpeditionRecord] | null>(null);
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [guideError, setGuideError] = useState('');
+  async function openGuide() {
+    pauseForInspection(); setGuideLoading(true); setGuideError('');
+    try {
+      const records = await Promise.all(['jev', 'baseline'].map(async name => {
+        const response = await fetch(`${import.meta.env.BASE_URL}guided/${name}.json`);
+        if (!response.ok) throw new Error('Bundled recording unavailable.');
+        return importExpeditionRecord(await response.text());
+      }));
+      createReplay(records[0]);
+      setGuidedRecords(records as [ExpeditionRecord, ExpeditionRecord]);
+    } catch { setGuideError('The bundled recording could not be loaded or validated. Baseline expeditions remain available.'); }
+    finally { setGuideLoading(false); }
+  }
   const [matchedSource, setMatchedSource] = useState<ExpeditionRecord | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<ExpeditionRecord | null>(null);
@@ -86,6 +105,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
     setPanel(null); setSelectedRecord(null); setComparison(null);
   };
 
+  if (guidedRecords) return <GuidedReplay records={guidedRecords} onClose={() => setGuidedRecords(null)} />;
   return <div className={`expedition-shell${panel ? ' panel-open' : ''}${panel === 'records' ? ' records-open' : ''}`} onKeyDown={event => {
     if (event.key === 'Escape' && panel) { event.preventDefault(); closePanel(); }
   }}>
@@ -107,7 +127,14 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
       <nav className="panel-navigation" aria-label="Expedition panels">{(Object.entries(panels) as [Panel, string][]).filter(([name]) => name !== 'results' || status === 'ended').map(([name, title]) =>
         <button className="secondary" id={`panel-${name}-button`} key={name} aria-expanded={panel === name} aria-controls="expedition-panel" onClick={() => panel === name ? closePanel() : openPanel(name)}>{title}</button>
       )}</nav>
-      <LatestDecision snapshot={snapshot} decisions={decisions} selectedDecision={selectedDecision} onInspect={inspectDecision} />
+      {status === 'ready' && !panel ? <div className="decision-overlay"><section className="latest-decision lab-entry" aria-label="Try the lab">
+        <p className="eyebrow">EXPLORE THE DECISION LAB</p><h2>See what Jev chooses</h2>
+        <p>Follow an authentic recorded expedition, inspect the baseline alternative, and see the consequences and historical cost. The recording includes a failure and unfinished outcome.</p>
+        <button className="primary" disabled={guideLoading} onClick={openGuide}>{guideLoading ? 'Loading recording…' : 'Start guided replay'}</button>
+        <button className="secondary" onClick={() => { dispatch({ type: 'set-controller', controller: 'baseline' }); dispatch({ type: 'start' }); }}>Start keyless baseline</button>
+        <button className="secondary" onClick={() => { dispatch({ type: 'set-controller', controller: 'typesafe' }); openPanel('usage'); }}>Set up live Jev</button>
+        {guideError && <p role="alert">{guideError}</p>}
+      </section></div> : <LatestDecision snapshot={snapshot} decisions={decisions} selectedDecision={selectedDecision} onInspect={inspectDecision} />}
       <aside id="expedition-panel" className={`expedition-panel${panel === 'records' ? ' record-panel' : ''}`} aria-label="Expedition panel" hidden={!panel}>
         <div className="expedition-panel-heading"><h2>{panel ? panels[panel] : ''}</h2><button className="secondary" ref={closeButton} onClick={closePanel} aria-label="Close panel">Close</button></div>
         <div className="expedition-panel-body" ref={panelBody}>
@@ -118,6 +145,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
             {!selectedDecision && <RoverEvidence snapshot={snapshot} />}
           </div>
           <div hidden={panel !== 'usage'}>
+            {status === 'ready' && <section className="live-setup" aria-label="Live Jev setup"><h3>Live Jev uses your backend key</h3><p>Set TYPESAFE_API_KEY in the local server's ignored .env file. Never use a VITE_ key or paste a key into the browser.</p><p>Run <code>bun run dev:server</code> and <code>bun run dev</code> in separate terminals. Apply limits below before starting. Unknown usage or a reached limit pauses further inference.</p><p>Selected controller: {controllerLabels[snapshot.controller]}. Start expedition sends live requests only when TypeSafe is selected.</p></section>}
             <InferenceUsagePause snapshot={snapshot} decisions={decisions} dispatch={dispatch} />
             {snapshot.decisionFailure && !snapshot.usagePause && status === 'paused' && <section className="recovery-panel" aria-label="Inference recovery">
               <h3>Jev decision failed</h3><p role="status">{failureMessages[snapshot.decisionFailure]}</p>

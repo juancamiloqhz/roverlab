@@ -1,0 +1,52 @@
+{
+  "startedAt": "2026-09-23T16:29:46.012Z",
+  "finishedAt": "2026-09-23T16:29:56.768Z",
+  "limits": {
+    "providerAttempts": 250,
+    "estimatedCost": 0.1
+  },
+  "benchmark": "evidence-survey",
+  "stopReason": {
+    "failure": "unavailable",
+    "usagePause": {
+      "reasons": [
+        "uncertainty"
+      ],
+      "attemptIds": [
+        "7994234e-8758-4a5c-bf8d-d4dafd4bddd0"
+      ]
+    }
+  },
+  "sourceId": "3b1f7907-6270-4677-a91d-19f8cc1d40e1",
+  "baselineId": "8a453d82-34e0-4d3c-9b94-568bdec29e8e",
+  "outcome": {
+    "jev": "manual-stop",
+    "baseline": "timeout",
+    "jevScience": 0,
+    "baselineScience": 10
+  },
+  "usage": {
+    "controllerDecisions": 11,
+    "jevDecisions": 11,
+    "localSubmissions": 11,
+    "providerAttempts": 11,
+    "retries": 0,
+    "unconfirmedSubmissions": 0,
+    "inputTokens": null,
+    "outputTokens": null,
+    "knownEstimatedCost": 0.009210096,
+    "estimatedCost": null
+  },
+  "inferenceLatencyMs": 4401.275569,
+  "selection": "First capture, selected for teaching regardless of relative score. No discarded live runs.",
+  "artifacts": {
+    "jev": {
+      "path": "public/guided/jev.json",
+      "sha256": "197f5d51bd683b0136bdcebae3e6eb65ee4a5b694a116fc73b5678c33e758e0e"
+    },
+    "baseline": {
+      "path": "public/guided/baseline.json",
+      "sha256": "112ec4de7d3ee88188e6a53bf2207759daf30fee5f2d1f5bd54f47ea8056cf96"
+    }
+  }
+}

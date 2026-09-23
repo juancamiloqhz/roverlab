@@ -35,6 +35,8 @@ Version 10 records preserve these alternatives through local saving, validated i
 
 [Jev decision lab ticket 11](.scratch/jev-decision-lab/issues/11-record-and-reproduce-intervention-schedules.md) adds **Use example schedule** in the Mission panel. It requests Explore more at 01:00, then introduces a fixed-location storm and requests Conserve energy at 06:00. Manual mission changes and storms join the captured schedule at their actual expedition times. The panel distinguishes request times from safe-boundary mission application and shows event data in live, saved, and replay views. Version 11 records preserve definitions, ordering, and actual history; versions 1 through 10 retain their original replay behavior. See [intervention schedules](docs/intervention-schedules.md) for clock resolution, ordering, and session reproduction.
 
+[Jev decision lab ticket 14](.scratch/jev-decision-lab/issues/14-introduce-the-lab-through-an-authentic-guided-replay.md) adds **Start guided replay**, **Start keyless baseline**, and **Set up live Jev** to the ready screen. The six-step guide uses authentic recorded decisions in layout A and makes zero new inference calls. It retains an unfinished capture, its provider failure and unknown cost, and the actual matched baseline outcome. Historical calls, tokens, latency, model, and prices remain inspectable. See [capture provenance, results, and local setup](docs/guided-replay.md). Live inference still requires your server-side key and explicit limits.
+
 ## Stack
 
 - React, TypeScript, and Vite for the browser application.
@@ -74,6 +76,7 @@ bun test tests/mission.test.ts   # exclusive presets, shared SDK input, safe bou
 bun test tests/decisions.test.ts # instruction edits, safe reconsideration, pending decisions, and stale results
 bun test tests/decision-viewing.test.ts # inspection, teaching, held-choice validity, guards, and legacy replay
 bun test tests/interventions.test.ts # schedules, simultaneous boundaries, pauses, manual reproduction, and legacy replay
+bun test tests/guided-replay.test.ts # authentic artifact validation, teaching, outcomes, and matched baseline
 bun test tests/benchmarks.test.ts # benchmark presets, long runs, scripted provider, guards, and legacy replay
 bun test tests/matched-expeditions.test.ts # fresh keyless baselines, matched conditions, uncertain usage, and legacy replay
 bun test tests/decision-comparison.test.ts # same-input alternatives, routes, failures, immutable evidence, and legacy replay
