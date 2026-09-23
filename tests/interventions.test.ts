@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { createDecisionHandler } from '../server/decisions';
 import { createTypeSafeController } from '../src/controllers/typesafe';
@@ -242,7 +243,7 @@ test('a real SDK usage pause freezes future interventions until explicit baselin
   let calls = 0;
   const handler = createDecisionHandler({ apiKey: 'scripted-key', fetch: async (_url, init) => {
     calls++;
-    const input = (JSON.parse(init!.body as string) as { state: ControllerInput }).state;
+    const input = readProviderInput((JSON.parse(init!.body as string) as { state: ControllerInput }).state);
     expect(input).not.toHaveProperty('interventions');
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1_000, output_tokens: 40 },
       answers: { action: { type: 'choice', choice: 'wait:5000', confidence: 1,

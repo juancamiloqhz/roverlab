@@ -20,7 +20,7 @@ test('Jev usage exposes token-derived estimates and retains its pricing through 
   await expect(timeline).toContainText('Resolved model: jev-1.13.0');
   await expect(timeline).toContainText('Input rate: $0.042 per million tokens');
   await expect(timeline).toContainText('Output rate: $0 per million tokens');
-  await expect(timeline).toContainText('Prompt version: rover-action-v3');
+  await expect(timeline).toContainText('Prompt version: rover-action-v4');
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/jev-usage-mobile.png', fullPage: true });

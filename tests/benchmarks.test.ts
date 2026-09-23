@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { createExpedition, createMatchedBaseline, createReplay } from '../src/simulation/expedition';
 import { exportExpeditionRecord, importExpeditionRecord } from '../src/records/contract';
@@ -158,7 +159,7 @@ for (const failure of ['retry', 'unknown', 'cost'] as const) test(`benchmark ${f
   const handler = createDecisionHandler({ apiKey: 'benchmark-scripted-provider', fetch: async (_url, init) => {
     attempts++;
     if (failure === 'unknown') return new Response('Unavailable', { status: 503 });
-    const input: ControllerInput = JSON.parse(init!.body as string).state;
+    const input: ControllerInput = readProviderInput(JSON.parse(init!.body as string).state);
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 },
       answers: { action: { type: 'choice', choice: 'wait:5000', confidence: 0,
         probabilities: Object.fromEntries(input.candidates.map(action => [action.id, 1 / input.candidates.length])) } } },

@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { createExpedition, createReplay } from '../src/simulation/expedition';
 import { createDecisionHandler } from '../server/decisions';
@@ -23,7 +24,7 @@ test('a pending Jev decision records the baseline from its exact input without a
   const requestReceived = new Promise<void>(resolve => { received = resolve; });
   const handler = createDecisionHandler({ apiKey: 'scripted-key', fetch: async (_url, init) => {
     calls++;
-    supplied = JSON.parse(init!.body as string).state as ControllerInput;
+    supplied = readProviderInput(JSON.parse(init!.body as string).state) as ControllerInput;
     received();
     return new Promise<Response>(resolve => { release = resolve; });
   } });

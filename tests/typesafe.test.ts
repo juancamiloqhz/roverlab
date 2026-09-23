@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test, spyOn } from 'bun:test';
 import { createDecisionHandler } from '../server/decisions';
 import { createTypeSafeController } from '../src/controllers/typesafe';
@@ -47,6 +48,7 @@ test('an uncertain TypeSafe Choice executes an offered action and records its ac
   const requests: unknown[] = [];
   const handler = createDecisionHandler({ apiKey: 'test-key-never-expose', fetch: async (_url, init) => {
     const body = JSON.parse(init!.body as string);
+    body.state = readProviderInput(body.state);
     requests.push(body);
     const ids = Object.keys(body.questions.action.criteria);
     return Response.json({ ...knownUsage, answers: { action: { type: 'choice', choice: 'wait:5000', confidence: 0,
@@ -72,7 +74,7 @@ test('one retry follows a transient external failure and both attempts are recor
     attempts++;
     if (attempts === 1) return transient();
     expect(new Headers(init!.headers).has('X-TypeSafe-Retry-Count')).toBe(false);
-    return success(JSON.parse(init!.body as string).state);
+    return success(readProviderInput(JSON.parse(init!.body as string).state));
   });
   expedition.dispatch({ type: 'start' });
   await settled(expedition);
@@ -123,7 +125,7 @@ test.each(['invented-choice', 'missing-probability', 'bad-probability', 'wrong-t
     const { expedition } = expeditionWithService(async (_url, init) => {
       attempts++;
       if (invalid === 'malformed-json') return new Response('{broken', { headers: { 'Content-Type': 'application/json' } });
-      const body = await success(JSON.parse(init!.body as string).state).json();
+      const body = await success(readProviderInput(JSON.parse(init!.body as string).state)).json();
       const answer = body.answers.action;
       if (invalid === 'invented-choice') answer.choice = 'invented';
       if (invalid === 'missing-probability') delete answer.probabilities['wait:5000'];
@@ -149,7 +151,7 @@ test('malformed browser/backend output pauses instead of automatically retrying 
 test.each(['set-instructions', 'reset', 'stop'] as const)('%s cancels the external request, discards late output and preserves attempt attribution', async command => {
   const pending: { input: ControllerInput; signal: AbortSignal; resolve: (response: Response) => void }[] = [];
   const { expedition } = expeditionWithService((_url, init) => new Promise(resolve => {
-    pending.push({ input: JSON.parse(init!.body as string).state, signal: init!.signal!, resolve });
+    pending.push({ input: readProviderInput(JSON.parse(init!.body as string).state), signal: init!.signal!, resolve });
   }));
   expedition.dispatch({ type: 'start' });
   await flush();
@@ -178,7 +180,7 @@ test.each(['set-instructions', 'reset', 'stop'] as const)('%s cancels the extern
 test('a complete TypeSafe expedition uses only rover knowledge through exploration, inspection, delivery and recharge', async () => {
   const inputs: ControllerInput[] = [];
   const { expedition } = expeditionWithService(async (_url, init) => {
-    const input = JSON.parse(init!.body as string).state as ControllerInput;
+    const input = readProviderInput(JSON.parse(init!.body as string).state) as ControllerInput;
     inputs.push(input);
     return success(input, chooseBaselineAction(input).id);
   });
@@ -298,7 +300,7 @@ test('a successful response arriving after the deadline is rejected even before 
     const timer = setTimeout(callback, ms);
     return () => clearTimeout(timer);
   } };
-  const handler = createDecisionHandler({ apiKey: 'test-key', clock, fetch: async (_url, init) => success(JSON.parse(init!.body as string).state) });
+  const handler = createDecisionHandler({ apiKey: 'test-key', clock, fetch: async (_url, init) => success(readProviderInput(JSON.parse(init!.body as string).state)) });
   const controller = createTypeSafeController({ clock, fetch: async (url, init) => {
     const response = await handler(new Request(new URL(url, 'http://localhost'), init));
     // Model network delivery arriving after expiry while timers are not serviced.
@@ -317,7 +319,7 @@ test('mission control retries a failed decision with current instructions and th
   const inputs: ControllerInput[] = [];
   let release!: () => void;
   const { expedition } = expeditionWithService((_url, init) => {
-    const input = JSON.parse(init!.body as string).state as ControllerInput;
+    const input = readProviderInput(JSON.parse(init!.body as string).state) as ControllerInput;
     inputs.push(input);
     if (inputs.length <= 2) return Promise.resolve(transient());
     return new Promise(resolve => { release = () => resolve(success(input)); });
@@ -362,7 +364,7 @@ test('explicit baseline continuation preserves cargo, earned science and resourc
     ],
   };
   const { expedition } = expeditionWithService(async (_url, init) => {
-    const input = JSON.parse(init!.body as string).state as ControllerInput;
+    const input = readProviderInput(JSON.parse(init!.body as string).state) as ControllerInput;
     if (input.cargo.some(sample => sample.sampleId === 'b')) return success(input, 'invented');
     const action = input.cargo.length ? input.candidates.find(action => action.kind === 'return-to-base')! : chooseBaselineAction(input);
     return success(input, action.id);
@@ -408,7 +410,7 @@ test.each([false, true])('repeated recovery failures preserve usage and manual r
   let attempts = 0;
   const { expedition } = expeditionWithService(async (_url, init) => {
     attempts++;
-    const input = JSON.parse(init!.body as string).state as ControllerInput;
+    const input = readProviderInput(JSON.parse(init!.body as string).state) as ControllerInput;
     if (attempts === 1) return success(input, 'invented');
     if (attempts === 100 && !failLast) return success(input);
     return transient();
@@ -449,7 +451,7 @@ test.each(['retry-decision', 'continue-with-baseline', 'reset', 'stop'] as const
     const clock = manualClock();
     const pending: { input: ControllerInput; signal: AbortSignal; resolve: (response: Response) => void }[] = [];
     const { expedition } = expeditionWithService((_url, init) => new Promise(resolve => {
-      pending.push({ input: JSON.parse(init!.body as string).state, signal: init!.signal!, resolve });
+      pending.push({ input: readProviderInput(JSON.parse(init!.body as string).state), signal: init!.signal!, resolve });
     }), { clock });
     expedition.dispatch({ type: 'start' });
     await flush();
@@ -480,7 +482,7 @@ test.each(['retry-decision', 'continue-with-baseline', 'reset', 'stop'] as const
 test('the real TypeSafe contract accepts discovered storms and selects a complete detour candidate', async () => {
   const requests: ControllerInput[] = [];
   const { expedition } = expeditionWithService(async (_url, init) => {
-    const input: ControllerInput = JSON.parse(init!.body as string).state;
+    const input: ControllerInput = readProviderInput(JSON.parse(init!.body as string).state);
     requests.push(input);
     const detour = input.candidates.find(candidate => candidate.kind === 'inspect' && candidate.routeMode === 'avoid-storm');
     return success(input, detour?.id ?? 'wait:5000');
@@ -496,6 +498,7 @@ test('the real TypeSafe contract accepts discovered storms and selects a complet
   await settled(expedition);
   expect(expedition.getSnapshot()).toMatchObject({ decisionFailure: null, inferenceAttempts: 1,
     currentAction: { kind: 'inspect', routeMode: 'avoid-storm', routeEstimate: { energy: 12 } } });
+  expect(requests[0]).toEqual(expedition.getDecisions()[0]!.input);
   expect(requests[0]!.observations.find(item => item.kind === 'dust-storm')).toMatchObject({ radius: 0.5, remainingMs: 90_000 });
   expect(JSON.stringify(requests)).not.toContain('Private mineral');
   expect(JSON.stringify(requests)).not.toContain('classifications');

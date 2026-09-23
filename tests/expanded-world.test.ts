@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { runExpandedPlaytest } from '../scripts/playtest-expanded-world';
 import { createExpedition, createReplay } from '../src/simulation/expedition';
@@ -169,7 +170,7 @@ test('the backend and real SDK accept growing rover knowledge across an eighteen
   let mostKnownCells = 0;
   const handler = createDecisionHandler({ apiKey: 'expanded-world-scripted-provider', fetch: async (_url, init) => {
     calls++;
-    const input = JSON.parse(init!.body as string).state;
+    const input = readProviderInput(JSON.parse(init!.body as string).state);
     mostKnownCells = Math.max(mostKnownCells, input.memory.filter((item: { kind: string }) => item.kind === 'terrain').length);
     expect(JSON.stringify(input)).not.toContain('classifications');
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 },

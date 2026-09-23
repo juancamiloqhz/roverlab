@@ -2,6 +2,7 @@ import { APIConnectionError, APIError, choice, TypeSafeClient, type Fetch } from
 import { DECISION_DEADLINE_MS, requestSchema, validChoice, wallClock, type DecisionClock, type DecisionResponse } from '../shared/decisions';
 import { attemptIdentitySchema, usageRequestSchema, sameAttempt } from '../shared/inference';
 import { createAttemptAccounting } from './attempts';
+import { decisionState, observationInstructions } from './decision-prompt';
 import { REQUESTED_MODEL } from './inference';
 
 // The ledger survives local connection loss, but not a backend restart. Missing
@@ -51,10 +52,10 @@ export function createDecisionHandler(options: { apiKey?: string; fetch?: Fetch;
       try {
         abort.signal.throwIfAborted();
         const { data: result, requestId, response } = await client.systemOne({
-          state: input,
+          state: decisionState(input),
           questions: { action: choice(
-            'Choose the complete available action that best pursues `objective` under `mission.preferences`. In preset mode use only its structured settings: dimensionless scienceWeight, deliveryWeight, energyWeight and explorationWeight express relative emphasis, while returnReserveEnergy is a desired battery margin above the known return-route energy estimate. These preferences do not change simulation rules or action validity. In free-text mode use only its instructions; no preset applies. If mission is absent, use the legacy `instructions`. Use known observations and memory, time, battery and cargo. Only delivered samples earn science credit. Properties are unknown until inspection. Explore to discover more, inspect to learn, collect to carry, return to deliver, recharge at base, or wait. Known dust storms disclose their expiry and effects. Route estimates assume immediate departure; avoid-storm candidates take a longer known route around the region, and waiting consumes expedition time. Choose exactly one supplied candidate; do not infer hidden terrain or properties.',
-            Object.fromEntries(input.candidates.map(candidate => [candidate.id, candidate])),
+            observationInstructions + 'Choose the complete available action that best pursues `objective` under `mission.preferences`. In preset mode use only its structured settings: dimensionless scienceWeight, deliveryWeight, energyWeight and explorationWeight express relative emphasis, while returnReserveEnergy is a desired battery margin above the known return-route energy estimate. These preferences do not change simulation rules or action validity. In free-text mode use only its instructions; no preset applies. If mission is absent, use the legacy `instructions`. Use known observations and memory, time, battery and cargo. Only delivered samples earn science credit. Properties are unknown until inspection. Explore to discover more, inspect to learn, collect to carry, return to deliver, recharge at base, or wait. Known dust storms disclose their expiry and effects. Route estimates assume immediate departure; avoid-storm candidates take a longer known route around the region, and waiting consumes expedition time. Choose exactly one supplied candidate; do not infer hidden terrain or properties.',
+            Object.fromEntries(input.candidates.map(candidate => [candidate.id, null])),
           ) },
         }, { signal: abort.signal, timeout: remaining, retry: { maxRetries: 0 } }).withResponse();
         accounting!.receive(result, requestId, response.status, credential);

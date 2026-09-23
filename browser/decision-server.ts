@@ -1,10 +1,11 @@
+import { readProviderInput } from '../tests/fixtures/provider-input';
 // Browser verification runs the real backend and SDK, replacing only the paid service.
 import { createDecisionHandler } from '../server/decisions';
 import type { ControllerInput } from '../src/simulation/types';
 
 const releases = new Set<() => void>();
 const handler = createDecisionHandler({ apiKey: 'browser-test-key', fetch: async (_url, init) => {
-  const input = JSON.parse(init!.body as string).state as ControllerInput;
+  const input = readProviderInput(JSON.parse(init!.body as string).state) as ControllerInput;
   if (input.instructions === 'Hold for browser verification') await new Promise<void>((resolve, reject) => {
     const release = () => { releases.delete(release); resolve(); };
     releases.add(release);

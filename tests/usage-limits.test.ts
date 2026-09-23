@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { createDecisionHandler } from '../server/decisions';
 import { createTypeSafeController } from '../src/controllers/typesafe';
@@ -18,7 +19,7 @@ const settled = (session: ReturnType<typeof createExpedition>) => new Promise<vo
 test('a retry consumes the final provider slot and raising the limit preserves consumed usage', async () => {
   let outbound = 0;
   const handler = createDecisionHandler({ apiKey: 'scripted-key', fetch: async (_url, init) =>
-    response(JSON.parse(init!.body as string).state, ++outbound === 1 ? 503 : 200) });
+    response(readProviderInput(JSON.parse(init!.body as string).state), ++outbound === 1 ? 503 : 200) });
   const session = createExpedition({ controller: createTypeSafeController({
     fetch: (url, init) => handler(new Request(new URL(url, 'http://localhost'), init)),
   }) });
@@ -94,7 +95,7 @@ test('a completed response may cross the estimated-cost stopping rule and its hi
   let outbound = 0;
   const handler = createDecisionHandler({ apiKey: 'scripted-key', fetch: async (_url, init) => {
     outbound++;
-    return response(JSON.parse(init!.body as string).state);
+    return response(readProviderInput(JSON.parse(init!.body as string).state));
   } });
   const session = createExpedition({ controller: createTypeSafeController({
     fetch: (url, init) => handler(new Request(new URL(url, 'http://localhost'), init)),
@@ -138,7 +139,7 @@ test('acknowledged unconfirmed reservations stay unknown, and late evidence is c
   let outbound = 0;
   let release!: () => void;
   const handler = createDecisionHandler({ apiKey: 'scripted-key', fetch: async (_url, init) => {
-    const input = JSON.parse(init!.body as string).state;
+    const input = readProviderInput(JSON.parse(init!.body as string).state);
     if (++outbound === 2) return new Promise<Response>(resolve => { release = () => resolve(response(input, 503)); });
     return response(input);
   } });
@@ -238,7 +239,7 @@ test('the default provider allowance permits accounted attempts beyond the legac
   let outbound = 0;
   const handler = createDecisionHandler({ apiKey: 'scripted-key', fetch: async (_url, init) => {
     outbound++;
-    return response(JSON.parse(init!.body as string).state, 503);
+    return response(readProviderInput(JSON.parse(init!.body as string).state), 503);
   } });
   const session = createExpedition({ controller: createTypeSafeController({
     fetch: (url, init) => handler(new Request(new URL(url, 'http://localhost'), init)),
@@ -259,7 +260,7 @@ test('baseline continuation after late evidence reaches a safe waypoint and pres
   let outbound = 0;
   const handler = createDecisionHandler({ apiKey: 'scripted-key', fetch: async (_url, init) => {
     outbound++;
-    const input: ControllerInput = JSON.parse(init!.body as string).state;
+    const input: ControllerInput = readProviderInput(JSON.parse(init!.body as string).state);
     const body = await response(input).json();
     if (outbound === 2) body.answers.action.choice = input.candidates.find(candidate => candidate.kind === 'explore')!.id;
     return Response.json(body);

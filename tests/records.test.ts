@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
 
@@ -82,7 +83,7 @@ test.each([false, true])('TypeSafe histories preserve actual probabilities, reco
   const handler = createDecisionHandler({ apiKey: 'record-test-key-never-export', fetch: async (_url, init) => {
     calls++;
     if (fail) return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 }, error: 'record-test-key-never-export' }, { status: 503 });
-    const input = JSON.parse(init!.body as string).state;
+    const input = readProviderInput(JSON.parse(init!.body as string).state);
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 }, answers: { action: { type: 'choice', choice: 'wait:5000', confidence: 0,
       probabilities: Object.fromEntries(input.candidates.map((candidate: { id: string }) => [candidate.id, 1 / input.candidates.length])),
     } } });

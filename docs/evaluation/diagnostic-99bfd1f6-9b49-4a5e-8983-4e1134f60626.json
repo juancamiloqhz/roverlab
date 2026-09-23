@@ -1,0 +1,133 @@
+{
+  "at": "2026-09-23T17:14:06.550Z",
+  "live": true,
+  "sourceFile": "public/guided/jev.json",
+  "sourceDecision": 11,
+  "limits": {
+    "providerAttempts": 1,
+    "estimatedCost": 0.01
+  },
+  "diagnostic": {
+    "httpStatus": 200,
+    "responseFields": [
+      "model",
+      "answers",
+      "usage"
+    ]
+  },
+  "outcome": {
+    "selectedCandidateId": "explore:frontier:34,36",
+    "probabilities": {
+      "explore:frontier:20,33": 0.01,
+      "explore:frontier:13,21": 0,
+      "explore:frontier:34,36": 0.34,
+      "explore:frontier:13,32": 0,
+      "explore:frontier:14,20": 0,
+      "explore:frontier:19,24": 0,
+      "explore:frontier:25,33": 0.01,
+      "explore:frontier:13,27": 0,
+      "explore:frontier:19,30": 0,
+      "explore:frontier:19,29": 0,
+      "explore:frontier:13,29": 0,
+      "explore:frontier:33,34": 0.01,
+      "explore:frontier:13,23": 0,
+      "explore:frontier:26,33": 0,
+      "explore:frontier:24,33": 0,
+      "explore:frontier:19,25": 0,
+      "explore:frontier:27,33": 0,
+      "explore:frontier:16,18": 0,
+      "explore:frontier:23,33": 0,
+      "explore:frontier:15,19": 0,
+      "explore:frontier:13,25": 0,
+      "return-to-base:base": 0.14,
+      "explore:frontier:18,19": 0,
+      "explore:frontier:21,33": 0,
+      "explore:frontier:13,34": 0,
+      "explore:frontier:19,32": 0.01,
+      "explore:frontier:18,20": 0,
+      "explore:frontier:13,30": 0,
+      "explore:frontier:19,26": 0,
+      "explore:frontier:33,35": 0.04,
+      "explore:frontier:32,34": 0.22,
+      "wait:5000": 0.01,
+      "explore:frontier:22,33": 0,
+      "explore:frontier:13,26": 0,
+      "explore:frontier:19,31": 0,
+      "explore:frontier:29,33": 0.02,
+      "explore:frontier:13,28": 0,
+      "explore:frontier:13,24": 0.01,
+      "explore:frontier:31,33": 0.12,
+      "explore:frontier:13,22": 0,
+      "explore:frontier:14,37": 0,
+      "explore:frontier:19,28": 0,
+      "explore:frontier:14,19": 0,
+      "explore:frontier:30,33": 0.02,
+      "explore:frontier:13,33": 0,
+      "explore:frontier:28,33": 0.01,
+      "explore:frontier:13,36": 0.01,
+      "explore:frontier:13,31": 0,
+      "explore:frontier:19,27": 0,
+      "explore:frontier:33,37": 0.01,
+      "explore:frontier:17,19": 0,
+      "explore:frontier:13,35": 0
+    },
+    "confidence": 0.32
+  },
+  "usage": {
+    "controllerDecisions": 1,
+    "jevDecisions": 1,
+    "localSubmissions": 1,
+    "providerAttempts": 1,
+    "retries": 0,
+    "unconfirmedSubmissions": 0,
+    "inputTokens": 11920,
+    "outputTokens": 951,
+    "knownEstimatedCost": 0.00050064,
+    "estimatedCost": 0.00050064
+  },
+  "accounting": {
+    "expeditionId": "99bfd1f6-9b49-4a5e-8983-4e1134f60626",
+    "attempts": [
+      {
+        "submission": {
+          "identity": {
+            "expeditionId": "99bfd1f6-9b49-4a5e-8983-4e1134f60626",
+            "decisionId": 11,
+            "attemptId": "823da60c-2922-4f7e-9b2e-cfd1fc7946cc"
+          },
+          "submittedAtMs": 1790183646061,
+          "retryIndex": 0
+        },
+        "evidence": {
+          "revision": 4,
+          "observedAtMs": 1790183646549,
+          "execution": "response-received",
+          "httpStatus": 200,
+          "identity": {
+            "expeditionId": "99bfd1f6-9b49-4a5e-8983-4e1134f60626",
+            "decisionId": 11,
+            "attemptId": "823da60c-2922-4f7e-9b2e-cfd1fc7946cc"
+          },
+          "dispatch": "dispatched",
+          "requestedModel": "jev-latest",
+          "promptVersion": "rover-action-v4",
+          "resolvedModel": "jev-1.13.0",
+          "providerRequestId": "req_01a0cf42a45d74c9bb1ff0136371c6f9",
+          "inputTokens": 11920,
+          "outputTokens": 951,
+          "pricing": {
+            "model": "jev-1.13.0",
+            "inputPerMillion": 0.042,
+            "outputPerMillion": 0,
+            "currency": "USD",
+            "capturedAt": "2026-09-23T17:14:06.549Z",
+            "verifiedAt": "2026-09-22",
+            "source": "https://docs.typesafe.ai/models"
+          },
+          "startedAtMs": 1790183646065,
+          "latencyMs": 484
+        }
+      }
+    ]
+  }
+}

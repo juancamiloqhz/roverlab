@@ -1,3 +1,4 @@
+import { readProviderInput } from '../tests/fixtures/provider-input';
 import { createExpedition } from '../src/simulation/expedition';
 import { benchmarkIds, type BenchmarkId } from '../src/simulation/benchmarks';
 import { chooseSurveyAction } from './playtest-expanded-world';
@@ -29,7 +30,7 @@ function measureBenchmark(record: ExpeditionRecord) {
 export async function runBenchmarkPlaytest(benchmark: BenchmarkId, strategy: Strategy = 'baseline', preset?: MissionPresetId, provider = false) {
   const choose = (input: ControllerInput) => strategy === 'baseline' ? chooseBaselineAction(input).id : chooseSurveyAction(input, strategy !== 'no-recharge');
   const handler = createDecisionHandler({ apiKey: 'benchmark-scripted-provider', fetch: async (_url, init) => {
-    const input: ControllerInput = JSON.parse(init!.body as string).state;
+    const input: ControllerInput = readProviderInput(JSON.parse(init!.body as string).state);
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 },
       answers: { action: { type: 'choice', choice: choose(input), confidence: 0,
         probabilities: Object.fromEntries(input.candidates.map(action => [action.id, 1 / input.candidates.length])) } } });

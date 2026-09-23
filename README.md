@@ -212,6 +212,10 @@ The official `@typesafe-ai/sdk` **0.6.0** is exercised under **Bun 1.4.2**. Its 
 
 The expedition reserves each local submission before sending its request, including retries and requests that fail before reaching TypeSafe. This conservative accounting prevents uncertain transport failures or cancellation from refunding usage. Each new live expedition defaults to 250 provider attempts and $0.10 estimated inference cost. A reached limit or unacknowledged unknown usage pauses further requests. Stop/reset and instruction changes abort obsolete operations; their attempts and settlement latency remain in the original expedition's event history. Reset gives the new expedition a fresh budget. Manual pause preserves an outstanding valid request but does not resume simulation when it returns.
 
+### Compact Jev requests
+
+`rover-action-v4` prevents the observed context overflow by sending observations, memory, and actions as lossless labeled tables in compact JSON text. Candidate descriptions appear once. The original full inputs remain in records and baseline comparisons. Both the previously failing guided-capture decision and a larger late-expedition input were accepted in bounded live verification. See [diagnosis, evidence, and limits](docs/jev-context-overflow.md). The bundled guided replay preserves its original v3 failure.
+
 ### Jev usage and estimated inference cost
 
 [Jev decision lab ticket 01](.scratch/jev-decision-lab/issues/01-show-actual-jev-usage-and-estimated-cost.md) adds usage accounting to the existing layout. Live telemetry, decision details, saved results, replay, and comparison distinguish controller decisions, local submissions, confirmed outbound provider attempts, and provider retries. The backend confirms an attempt only when the SDK invokes its outbound transport. Missing credentials and invalid input rejected before dispatch contribute zero provider attempts. The existing `inferenceAttempts` field retains its local-submission meaning. Version 1 through 3 records preserve the historical 100-submission guard during replay; live expeditions use the provider allowances below.
@@ -246,7 +250,7 @@ Version 5 exports retain definitions, versions, and mission histories. Saved ins
 
 [Jev decision lab ticket 06](.scratch/jev-decision-lab/issues/06-request-decisions-at-meaningful-boundaries.md) adds `meaningful-boundaries-v1`. Changes reaching one safe boundary share a decision and preserve all contributing triggers. Return-energy reserve, cargo delivery time, and full cargo capacity can request reconsideration without forcing the controller's action. Mission control can distinguish Jev choosing, code executing, and pauses in the existing action panel.
 
-Version 7 exports preserve cadence and the exact trigger context supplied to the controller. Prompt provenance is `rover-action-v3`. Versions 1 through 6 retain their original trigger meanings and simulation behavior during inference-free replay. See [decision cadence](docs/decision-cadence.md) for the rules and deterministic provider-count evidence.
+Version 7 exports preserve cadence and the exact trigger context supplied to the controller. Version 7 introduced prompt `rover-action-v3`; current live requests use `rover-action-v4`, and existing records retain their original prompt provenance. Versions 1 through 6 retain their original trigger meanings and simulation behavior during inference-free replay. See [decision cadence](docs/decision-cadence.md) for the rules and deterministic provider-count evidence.
 
 ### Baseline scientific and resource rules
 

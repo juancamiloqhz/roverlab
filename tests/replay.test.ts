@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { createReplay } from '../src/simulation/expedition';
 import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
@@ -88,7 +89,7 @@ test.each([false, true])('TypeSafe choices and recovery replay without inference
   const handler = createDecisionHandler({ apiKey: 'replay-scripted-service', fetch: async (_url, init) => {
     calls++;
     if (fail) return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 } }, { status: 503 });
-    const input = JSON.parse(init!.body as string).state;
+    const input = readProviderInput(JSON.parse(init!.body as string).state);
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 }, answers: { action: { type: 'choice', choice: chooseBaselineAction(input).id, confidence: 0,
       probabilities: Object.fromEntries(input.candidates.map((candidate: { id: string }) => [candidate.id, 1 / input.candidates.length])),
     } } });

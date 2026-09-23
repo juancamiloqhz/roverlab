@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { createDecisionHandler } from '../server/decisions';
 import { createTypeSafeController } from '../src/controllers/typesafe';
@@ -19,7 +20,7 @@ test('provider failure metadata survives a retry without being confused with whe
   const handler = createDecisionHandler({ apiKey: 'failure-accounting-key', fetch: async (_url, init) => {
     if (++outbound === 1) return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 500, output_tokens: 20 },
       error: 'private provider details failure-accounting-key' }, { status: 503, headers: { 'x-typesafe-request-id': 'req-failure' } });
-    return success(JSON.parse(init!.body as string).state);
+    return success(readProviderInput(JSON.parse(init!.body as string).state));
   } });
   const session = createExpedition({ controller: createTypeSafeController({
     fetch: (url, init) => handler(new Request(new URL(url, 'http://localhost'), init)),
@@ -40,7 +41,7 @@ test('provider failure metadata survives a retry without being confused with whe
 
 test('late accounting updates the stopped expedition after reset without executing its obsolete choice', async () => {
   let release!: () => void;
-  const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async (_url, init) => success(JSON.parse(init!.body as string).state) });
+  const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async (_url, init) => success(readProviderInput(JSON.parse(init!.body as string).state)) });
   const controller = createTypeSafeController({ fetch: async (url, init) => {
     const response = await handler(new Request(new URL(url, 'http://localhost'), init));
     return new Promise<Response>(resolve => { release = () => resolve(response); });
@@ -69,7 +70,7 @@ test('a read-only reconciliation confirms lost local responses once, without ret
   let outbound = 0;
   const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async (_url, init) => {
     outbound++;
-    return success(JSON.parse(init!.body as string).state);
+    return success(readProviderInput(JSON.parse(init!.body as string).state));
   } });
   const session = createExpedition({ controller: createTypeSafeController({ fetch: async (url, init) => {
     const response = await handler(new Request(new URL(url, 'http://localhost'), init));
@@ -119,7 +120,7 @@ test.each(['stop', 'deadline', 'instructions'] as const)('a provider result afte
   let outbound = 0;
   const handler = createDecisionHandler({ apiKey: 'test-key', clock, fetch: async (_url, init) => {
     outbound++;
-    return new Promise<Response>(resolve => { release = () => resolve(success(JSON.parse(init!.body as string).state)); });
+    return new Promise<Response>(resolve => { release = () => resolve(success(readProviderInput(JSON.parse(init!.body as string).state))); });
   } });
   const session = createExpedition({ wallNow: clock.now, controller: createTypeSafeController({ clock,
     fetch: (url, init) => handler(new Request(new URL(url, 'http://localhost'), init)),
@@ -162,7 +163,7 @@ test.each(['stop', 'deadline', 'instructions'] as const)('a provider result afte
 test.each(['choice', 'json', 'local-choice'] as const)('a malformed %s preserves whatever provider accounting was available', async malformed => {
   const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async (_url, init) => {
     if (malformed === 'json') return new Response('{broken', { headers: { 'x-typesafe-request-id': 'req-malformed' } });
-    const body = await success(JSON.parse(init!.body as string).state).json();
+    const body = await success(readProviderInput(JSON.parse(init!.body as string).state)).json();
     if (malformed === 'choice') body.answers.action.choice = 'invented';
     return Response.json(body, { headers: { 'x-typesafe-request-id': 'req-malformed' } });
   } });
@@ -205,7 +206,7 @@ test('transport failure and an unavailable ledger retain uncertainty without fab
 
 test('duplicate request delivery is idempotent and missing lookup evidence cannot invent a free attempt', async () => {
   let outbound = 0;
-  const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async (_url, init) => { outbound++; return success(JSON.parse(init!.body as string).state); } });
+  const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async (_url, init) => { outbound++; return success(readProviderInput(JSON.parse(init!.body as string).state)); } });
   const session = createExpedition({ controller: createTypeSafeController({ fetch: async (url, init) => {
     const request = () => new Request(new URL(url, 'http://localhost'), init);
     const first = await handler(request());

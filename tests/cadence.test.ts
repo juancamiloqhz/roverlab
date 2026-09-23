@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { exportExpeditionRecord, importExpeditionRecord } from '../src/records/contract';
 import { expect, test } from 'bun:test';
 import { createDecisionHandler } from '../server/decisions';
@@ -13,7 +14,7 @@ function serviceRun(scenario = corridor, choose: (input: ControllerInput) => str
   input.candidates.find(candidate => candidate.kind === 'explore')?.id ?? 'wait:5000') {
   const inputs: ControllerInput[] = [];
   const handler = createDecisionHandler({ apiKey: 'scripted-test-key', fetch: async (_url, init) => {
-    const input: ControllerInput = JSON.parse(init!.body as string).state;
+    const input: ControllerInput = readProviderInput(JSON.parse(init!.body as string).state);
     inputs.push(input);
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 100, output_tokens: 10 },
       answers: { action: { type: 'choice', choice: choose(input), confidence: 0,

@@ -1,0 +1,67 @@
+{
+  "at": "2026-09-23T17:07:30.081Z",
+  "live": true,
+  "limits": {
+    "providerAttempts": 1,
+    "estimatedCost": 0.01
+  },
+  "diagnostic": {
+    "httpStatus": 400,
+    "structuredDetail": "{\"error_type\":\"max_tokens_exceeded\"}",
+    "responseFields": [
+      "detail"
+    ]
+  },
+  "outcome": {
+    "failure": "unavailable"
+  },
+  "usage": {
+    "controllerDecisions": 1,
+    "jevDecisions": 1,
+    "localSubmissions": 1,
+    "providerAttempts": 1,
+    "retries": 0,
+    "unconfirmedSubmissions": 0,
+    "inputTokens": null,
+    "outputTokens": null,
+    "knownEstimatedCost": 0,
+    "estimatedCost": null
+  },
+  "accounting": {
+    "expeditionId": "22e6cbe4-b227-44b2-82a2-13af531823c0",
+    "attempts": [
+      {
+        "submission": {
+          "identity": {
+            "expeditionId": "22e6cbe4-b227-44b2-82a2-13af531823c0",
+            "decisionId": 11,
+            "attemptId": "89652492-f70f-46e1-8d05-a51b40b80a90"
+          },
+          "submittedAtMs": 1790183249795,
+          "retryIndex": 0
+        },
+        "evidence": {
+          "revision": 4,
+          "observedAtMs": 1790183250080,
+          "execution": "provider-error",
+          "httpStatus": 400,
+          "identity": {
+            "expeditionId": "22e6cbe4-b227-44b2-82a2-13af531823c0",
+            "decisionId": 11,
+            "attemptId": "89652492-f70f-46e1-8d05-a51b40b80a90"
+          },
+          "dispatch": "dispatched",
+          "requestedModel": "jev-latest",
+          "promptVersion": "rover-action-v3",
+          "resolvedModel": null,
+          "providerRequestId": "req_01a0cf3c98107e57bad75f0eb7bd3a41",
+          "inputTokens": null,
+          "outputTokens": null,
+          "pricing": null,
+          "startedAtMs": 1790183249797,
+          "latencyMs": 283
+        }
+      }
+    ]
+  }
+}

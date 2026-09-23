@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { createExpedition, createReplay } from '../src/simulation/expedition';
 import { exportExpeditionRecord, importExpeditionRecord } from '../src/records/contract';
@@ -87,7 +88,7 @@ test.each([false, true])('inspection and teaching preserve a real SDK usage guar
     let calls = 0;
     const handler = createDecisionHandler({ apiKey: 'scripted-key', fetch: async (_url, init) => {
       calls++;
-      const input = JSON.parse(init!.body as string).state as ControllerInput;
+      const input = readProviderInput(JSON.parse(init!.body as string).state) as ControllerInput;
       return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 }, answers: { action: {
         type: 'choice', choice: 'wait:5000', confidence: 0,
         probabilities: Object.fromEntries(input.candidates.map(item => [item.id, 1 / input.candidates.length])),
@@ -223,7 +224,7 @@ test.each(['legacy-usage-v1', 'legacy-usage-v2', 'legacy-usage-v3', 'legacy-miss
 test('failure recovery cannot request a replacement until historical inspection ends', async () => {
   let calls = 0;
   const handler = createDecisionHandler({ apiKey: 'scripted-key', fetch: async (_url, init) => {
-    const input = JSON.parse(init!.body as string).state as ControllerInput;
+    const input = readProviderInput(JSON.parse(init!.body as string).state) as ControllerInput;
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 }, answers: { action: {
       type: 'choice', choice: ++calls === 1 ? 'invented' : 'wait:5000', confidence: 0,
       probabilities: Object.fromEntries(input.candidates.map(item => [item.id, 1 / input.candidates.length])),

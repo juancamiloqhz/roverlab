@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { createDecisionHandler } from '../server/decisions';
 import { createTypeSafeController } from '../src/controllers/typesafe';
@@ -18,7 +19,7 @@ test('a Jev choice retains confirmed outbound usage, identities and token-derive
   const handler = createDecisionHandler({ apiKey: 'usage-test-key', fetch: async (_url, init) => {
     outbound++;
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 },
-      answers: { action: choice(JSON.parse(init!.body as string).state) } },
+      answers: { action: choice(readProviderInput(JSON.parse(init!.body as string).state)) } },
     { headers: { 'x-typesafe-request-id': 'req-usage-1' } });
   } });
   const controller = createTypeSafeController({ fetch: (url, init) => {
@@ -37,7 +38,7 @@ test('a Jev choice retains confirmed outbound usage, identities and token-derive
   expect(attempt.submission.identity).toEqual(submissions[0].identity);
   expect(attempt.evidence).toMatchObject({ identity: attempt.submission.identity, dispatch: 'dispatched',
     requestedModel: 'jev-latest', resolvedModel: 'jev-1.13.0', providerRequestId: 'req-usage-1',
-    inputTokens: 1000, outputTokens: 40, promptVersion: 'rover-action-v3',
+    inputTokens: 1000, outputTokens: 40, promptVersion: 'rover-action-v4',
     pricing: { model: 'jev-1.13.0', inputPerMillion: 0.042, outputPerMillion: 0, currency: 'USD',
       source: 'https://docs.typesafe.ai/models' } });
   session.dispatch({ type: 'stop' });
@@ -125,7 +126,7 @@ test.each([
   { model: undefined, usage: undefined, inputTokens: null, outputTokens: null, resolvedModel: null },
 ])('missing metadata or unknown pricing stays incomplete: %j', async data => {
   const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async (_url, init) => Response.json({
-    model: data.model, usage: data.usage, answers: { action: choice(JSON.parse(init!.body as string).state) },
+    model: data.model, usage: data.usage, answers: { action: choice(readProviderInput(JSON.parse(init!.body as string).state)) },
   }) });
   const session = createExpedition({ controller: createTypeSafeController({
     fetch: (url, init) => handler(new Request(new URL(url, 'http://localhost'), init)),
@@ -148,7 +149,7 @@ test('decision wait and attempt timing are independent of expedition time and ar
   let release!: () => void;
   const handler = createDecisionHandler({ apiKey: 'test-key', clock, fetch: (_url, init) => new Promise(resolve => {
     release = () => resolve(Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 },
-      answers: { action: choice(JSON.parse(init!.body as string).state) } }));
+      answers: { action: choice(readProviderInput(JSON.parse(init!.body as string).state)) } }));
   }) });
   const session = createExpedition({ wallNow: clock.now, controller: createTypeSafeController({ clock, fetch: async (url, init) => {
     now += 20;
@@ -185,7 +186,7 @@ test('explicit continuation has its own confirmed outbound identity and leaves a
   const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async (_url, init) => {
     if (++outbound === 1) return new Response('private provider error', { status: 503 });
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 },
-      answers: { action: choice(JSON.parse(init!.body as string).state) } });
+      answers: { action: choice(readProviderInput(JSON.parse(init!.body as string).state)) } });
   } });
   const session = createExpedition({ controller: createTypeSafeController({
     fetch: (url, init) => handler(new Request(new URL(url, 'http://localhost'), init)),
@@ -214,7 +215,7 @@ test('explicit continuation has its own confirmed outbound identity and leaves a
 test('a backend response for a different attempt cannot supply accounting or execute a choice', async () => {
   const handler = createDecisionHandler({ apiKey: 'test-key', fetch: async (_url, init) => Response.json({
     model: 'jev-1.13.0', usage: { input_tokens: 1000, output_tokens: 40 },
-    answers: { action: choice(JSON.parse(init!.body as string).state) },
+    answers: { action: choice(readProviderInput(JSON.parse(init!.body as string).state)) },
   }) });
   const session = createExpedition({ controller: createTypeSafeController({ fetch: async (url, init) => {
     const body = await (await handler(new Request(new URL(url, 'http://localhost'), init))).json();
@@ -231,7 +232,7 @@ test('a backend response for a different attempt cannot supply accounting or exe
 test('successful metadata cannot echo a server credential or carry arbitrary provider fields', async () => {
   const handler = createDecisionHandler({ apiKey: '  secret-provider-key  ', fetch: async (_url, init) => Response.json({
     model: 'secret-provider-key', usage: { input_tokens: 1000, output_tokens: 40, credential: 'secret-provider-key' },
-    providerDetail: 'secret-provider-key', answers: { action: choice(JSON.parse(init!.body as string).state) },
+    providerDetail: 'secret-provider-key', answers: { action: choice(readProviderInput(JSON.parse(init!.body as string).state)) },
   }, { headers: { 'x-typesafe-request-id': 'req-secret-provider-key' } }) });
   const responses: string[] = [];
   const session = createExpedition({ controller: createTypeSafeController({ fetch: async (url, init) => {

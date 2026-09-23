@@ -1,3 +1,4 @@
+import { readProviderInput } from './fixtures/provider-input';
 import { expect, test } from 'bun:test';
 import { createReplay } from '../src/simulation/expedition';
 import { createFirstPlayableExpedition as createExpedition } from './fixtures/first-playable-session';
@@ -64,6 +65,7 @@ test.each(['balanced', 'conserve-energy', 'explore-more', 'free-text'] as const)
   let received: { state: ControllerInput; questions: { action: { instructions: string } } } | undefined;
   const handler = createDecisionHandler({ apiKey: 'scripted-key', fetch: async (_url, init) => {
     received = JSON.parse(init!.body as string);
+    received!.state = readProviderInput(received!.state);
     const input = received!.state;
     return Response.json({ model: 'jev-1.13.0', usage: { input_tokens: 1_000, output_tokens: 40 },
       answers: { action: { type: 'choice', choice: 'wait:5000', confidence: 0,
@@ -85,7 +87,7 @@ test.each(['balanced', 'conserve-energy', 'explore-more', 'free-text'] as const)
   expect(received!.questions.action.instructions).toContain('mission.preferences');
   expect(JSON.stringify(received)).not.toContain('classifications');
   expect(JSON.stringify(received)).not.toContain('Sample B');
-  expect(jev.getDecisions()[0]!.accounting!.attempts[0]!.evidence!.promptVersion).toBe('rover-action-v3');
+  expect(jev.getDecisions()[0]!.accounting!.attempts[0]!.evidence!.promptVersion).toBe('rover-action-v4');
   jev.dispatch({ type: 'stop' });
   roundTrip(jev);
 });
@@ -185,6 +187,7 @@ test.each(['conflicting-text', 'invented-definition', 'missing-preferences'] as 
   } });
   const session = createExpedition({ controller: createTypeSafeController({ fetch: (url, init) => {
     const body = JSON.parse(init!.body as string);
+    body.state = readProviderInput(body.state);
     if (corruption === 'conflicting-text') body.input.instructions = 'Competing instructions';
     else if (corruption === 'invented-definition') body.input.mission.preferences.preset.settings.energyWeight = 99;
     else delete body.input.mission.preferences;
