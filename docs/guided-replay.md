@@ -1,6 +1,6 @@
 # Authentic guided replay
 
-Ticket 14 bundles the first live Evidence survey capture, including its failure. Start guided replay on the ready screen. Six steps show observations, Jev's choice, the same-state baseline alternative, recorded movement, original cost, and actual outcomes in fullscreen layout A. Evidence, Usage, Matched results, and Record & replay remain available throughout. Escape returns to the guide. Exit or Finish returns to the ready expedition.
+Ticket 14 bundles the first live Evidence survey capture, including its failure. Start guided replay on the ready screen. Six steps show observations, Jev's choice, the same-state baseline alternative, recorded movement, original cost, and actual outcomes in fullscreen layout A. Evidence, Usage, Matched results, and Record & replay remain available throughout. Hide panel exposes the world for camera inspection, and the navigation buttons reopen panels. Escape returns to the guide. Exit or Finish returns to the ready expedition.
 
 The guide requires no key and makes no inference requests. Its top usage figures are totals for the original capture, not new playback activity. The guide pauses at decision 2 using replay teaching mode. Step 4 executes that action at 4×, then holds decision 3. Previous/next navigation reconstructs recorded states; it never asks a controller for a replacement choice. Original JSON exports remain unchanged. Ordinary saved records, validated import/export, and legacy playback use their existing paths.
 
@@ -28,7 +28,7 @@ The selected benchmark is Evidence survey version 1, Balanced priorities, past-w
 | Applied choices | 10 | 83 |
 | Estimated inference cost | Unavailable; known subtotal $0.009210096 | $0 |
 
-The eleventh attempt failed as unavailable and had unknown token usage. The capture stopped before another request, preserving both the failure and usage pause. Total input/output tokens and total estimated cost remain unavailable. Cumulative Jev decision wait was 4401.275569 ms, separate from simulated time. The known subtotal is not a billing total or proof of a spending cap.
+The eleventh attempt received HTTP 400, which the existing backend mapped to unavailable, and had unknown token usage. The record retains that status without a raw provider error body. The capture stopped before another request, preserving both the failure and usage pause. The ten successful responses reported 219,288 input and 6,565 output tokens. Total input/output tokens and total estimated cost remain unavailable because the failed attempt supplied neither. Cumulative Jev decision wait was 4401.275569 ms, separate from simulated time. The known subtotal is not a billing total or proof of a spending cap.
 
 Decision 2 illustrates a disagreement: Jev chose exploration toward Frontier 16 / 27 with 35% returned probability; the same-state baseline suggested a five-second wait after surveying. Code traveled six cells, used 12 energy units, and earned zero science. This says what happened, not why Jev internally chose it. A probability is not a scientific score or success guarantee. The guide uses this first recording because it contains authentic choices, execution, an alternative, and operational failure, regardless of relative score.
 

@@ -40,6 +40,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
         return importExpeditionRecord(await response.text());
       }));
       createReplay(records[0]);
+      pauseForInspection();
       setGuidedRecords(records as [ExpeditionRecord, ExpeditionRecord]);
     } catch { setGuideError('The bundled recording could not be loaded or validated. Baseline expeditions remain available.'); }
     finally { setGuideLoading(false); }
@@ -121,7 +122,8 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
       </section>
       <FullscreenButton />
     </header>
-    <main className="expedition-stage" aria-label="Live expedition workspace">
+    {guideLoading && <p className="guide-loading" role="status">Loading and validating the recorded expedition. No inference is being requested.</p>}
+    <main className="expedition-stage" aria-label="Live expedition workspace" inert={guideLoading}>
       <ExpeditionScene snapshot={snapshot} getFullWorldView={getFullWorldView} decision={mapDecision} historical={!!selectedDecision} onInspect={inspectDecision} />
       <div className="live-status" aria-label="Live expedition status"><span>LIVE · {controllerLabels[snapshot.controller]}</span><strong aria-label="Decision phase">{decisionPhase}</strong><span>{statusLabel}</span>{needsRecovery && <button className="secondary" onClick={() => openPanel('usage')}>Review recovery</button>}</div>
       <nav className="panel-navigation" aria-label="Expedition panels">{(Object.entries(panels) as [Panel, string][]).filter(([name]) => name !== 'results' || status === 'ended').map(([name, title]) =>

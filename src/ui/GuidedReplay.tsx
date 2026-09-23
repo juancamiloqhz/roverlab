@@ -29,13 +29,15 @@ export function GuidedReplay({ records, onClose }: { records: [ExpeditionRecord,
   const { snapshot, decisions, dispatch } = useExpedition(() => session);
   const [step, setStep] = useState(0);
   const [panel, setPanel] = useState<Panel>('guide');
+  const [panelVisible, setPanelVisible] = useState(true);
   const [openedRecord, setOpenedRecord] = useState(source);
   const title = useRef<HTMLHeadingElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const selected = decisions.find(item => item.id === snapshot.inspectionDecisionId);
   const choice = source.decisions.find(item => item.id === 2)!;
-  useEffect(() => { title.current?.focus(); body.current?.scrollTo({ top: 0 }); }, [panel, step]);
+  useEffect(() => { if (panelVisible) { title.current?.focus(); body.current?.scrollTo({ top: 0 }); } }, [panel, step, panelVisible]);
   function showPanel(next: Panel) {
+    setPanelVisible(true);
     if (next === 'evidence') dispatch({ type: 'inspect-decision', decisionId: choice.id });
     else { dispatch({ type: 'pause' }); dispatch({ type: 'end-inspection' }); }
     setPanel(next);
@@ -54,10 +56,10 @@ export function GuidedReplay({ records, onClose }: { records: [ExpeditionRecord,
       dispatch({ type: 'set-speed', speed: 4 });
       dispatch({ type: 'continue-choice' });
     }
-    setStep(next); setPanel('guide');
+    setStep(next); setPanel('guide'); setPanelVisible(true);
   }
   const usage = source.results.usage;
-  return <div className={`expedition-shell guided-shell panel-open${panel === 'results' || panel === 'record' ? ' records-open' : ''}`}
+  return <div className={`expedition-shell guided-shell${panelVisible ? ' panel-open' : ''}${panelVisible && (panel === 'results' || panel === 'record') ? ' records-open' : ''}`}
     onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); showPanel('guide'); title.current?.focus(); } }}>
     <header className="expedition-header">
       <div className="lab-brand"><h1>RoverLab</h1><span>GUIDED REPLAY</span></div>
@@ -71,15 +73,16 @@ export function GuidedReplay({ records, onClose }: { records: [ExpeditionRecord,
       </section><FullscreenButton />
     </header>
     <main className="expedition-stage" aria-label="Guided replay workspace">
-      <ExpeditionScene snapshot={snapshot} decision={selected ?? (step < 3 ? choice : decisions.filter(item => item.action).at(-1))} historical={!!selected || step < 3} onInspect={id => { dispatch({ type: 'inspect-decision', decisionId: id }); setPanel('evidence'); }} />
+      <ExpeditionScene snapshot={snapshot} decision={selected ?? (step < 3 ? choice : decisions.filter(item => item.action).at(-1))} historical={!!selected || step < 3} onInspect={id => { dispatch({ type: 'inspect-decision', decisionId: id }); setPanel('evidence'); setPanelVisible(true); }} />
       <div className="live-status"><span>REPLAY · authentic Jev capture</span><strong aria-label="Replay provider activity">0 new provider attempts</strong><span>Historical usage only · No key needed</span></div>
       <nav className="panel-navigation" aria-label="Guided replay panels">
         {([['guide', 'Guide'], ['evidence', 'Evidence'], ['usage', 'Usage'], ['results', 'Matched results'], ['record', 'Record & replay']] as const).map(([id, label]) =>
-          <button className="secondary" key={id} aria-expanded={panel === id} onClick={() => showPanel(id)}>{label}</button>)}
+          <button className="secondary" key={id} id={`${id}-panel-button`} aria-expanded={panelVisible && panel === id} onClick={() => showPanel(id)}>{label}</button>)}
       </nav>
-      <LatestDecision snapshot={snapshot} decisions={decisions} selectedDecision={selected ?? (step < 3 ? choice : undefined)} onInspect={id => { dispatch({ type: 'inspect-decision', decisionId: id ?? choice.id }); setPanel('evidence'); }} />
-      <aside className={`expedition-panel${panel === 'results' || panel === 'record' ? ' record-panel' : ''}`} aria-label="Guide panel">
+      <LatestDecision snapshot={snapshot} decisions={decisions} selectedDecision={selected ?? (step < 3 ? choice : undefined)} onInspect={id => { dispatch({ type: 'inspect-decision', decisionId: id ?? choice.id }); setPanel('evidence'); setPanelVisible(true); }} />
+      <aside className={`expedition-panel${panel === 'results' || panel === 'record' ? ' record-panel' : ''}`} aria-label="Guide panel" hidden={!panelVisible}>
         <div className="expedition-panel-heading"><h2 ref={title} tabIndex={-1}>{panel === 'guide' ? `${step + 1}. ${headings[step]}` : { evidence: 'Recorded evidence', usage: 'Historical usage', results: 'Matched results', record: 'Original record' }[panel]}</h2>
+          <button className="secondary" onClick={() => { setPanelVisible(false); document.getElementById('guide-panel-button')?.focus(); }}>Hide panel</button>
           {panel !== 'guide' && <button className="secondary" onClick={() => showPanel('guide')}>Back to guide</button>}</div>
         <div className="expedition-panel-body" ref={body}>
           {panel === 'guide' && <div className="guide-copy">

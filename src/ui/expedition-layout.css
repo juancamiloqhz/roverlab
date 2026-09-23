@@ -207,3 +207,5 @@ body { min-width: 320px; }
   .guide-copy { font-size: 12px; }
   .lab-entry button { min-height: 36px; font-size: 11px; }
 }
+
+.guide-loading { position: fixed; z-index: 70; left: 12px; right: 12px; top: 25%; padding: 20px; background: #172325fa; border: 1px solid #70806c; border-radius: 8px; }

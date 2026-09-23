@@ -16,6 +16,8 @@ for (const narrow of [false, true]) test(`authentic guide, evidence, usage, matc
   await expect(page.getByRole('heading', { name: '1. What the rover knows' })).toBeVisible();
   await page.clock.runFor(200);
   await page.screenshot({ path: `test-results/guided-entry-${narrow ? 'narrow' : 'desktop'}.png` });
+  await page.getByRole('button', { name: 'Hide panel', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Guide panel' })).toBeHidden();
   await page.getByRole('button', { name: 'Evidence', exact: true }).click();
   await expect(page.getByLabel('Decision 2 details')).toBeVisible();
   await page.getByRole('button', { name: 'Usage', exact: true }).click();
@@ -67,5 +69,22 @@ test('live setup exposes limits before inference and missing guide assets leave 
   await expect(page.getByLabel('Live Jev setup')).toContainText('TYPESAFE_API_KEY');
   await expect(page.getByRole('spinbutton', { name: 'Provider-attempt limit', exact: true })).toHaveValue('250');
   await expect(page.getByRole('spinbutton', { name: 'Estimated-cost limit in USD', exact: true })).toHaveValue('0.1');
+  expect(calls).toBe(0);
+});
+
+test('loading a guided record cannot hide a newly started live expedition', async ({ page }) => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let calls = 0;
+  await page.route('**/api/**', route => { calls++; return route.abort(); });
+  await page.route('**/guided/jev.json', async route => { await gate; await route.continue(); });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Set up live Jev', exact: true }).click();
+  await page.getByRole('button', { name: 'Close panel', exact: true }).click();
+  await page.getByRole('button', { name: 'Start guided replay', exact: true }).click();
+  await expect(page.locator('main')).toHaveAttribute('inert', '');
+  await expect(page.getByRole('status')).toContainText('Loading and validating');
+  release();
+  await expect(page.getByRole('main', { name: 'Guided replay workspace' })).toBeVisible();
   expect(calls).toBe(0);
 });
