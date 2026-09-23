@@ -1,3 +1,4 @@
+import { BenchmarkProvenance } from './ComparisonEvidence';
 import { InterventionSchedule } from './InterventionSchedule';
 import { MissionPreferences } from './MissionPreferences';
 import { InferenceLimitHistory } from './InferenceLimits';
@@ -144,6 +145,7 @@ export function SavedExpeditionView({ record, onClose, onRunBaseline, active }: 
   return <section className="saved-expedition" aria-label="Saved expedition">
     <p className="eyebrow">SAVED EXPEDITION · READ ONLY</p>
     <h2>{record.results.area.name}</h2>
+    <BenchmarkProvenance benchmark={record.startingConditions.benchmark} />
     <p>Scenario {record.startingConditions.scenario.id} · Simulation {record.startingConditions.simulationVersion ?? 'Legacy grid rules'} · {record.startingConditions.durationMs / 60_000}-minute budget</p>
     <p>Completed {new Date(record.completedAt).toLocaleString()}. Inspecting this history requires no API key.</p>
     <div className="record-toolbar">

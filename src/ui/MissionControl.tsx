@@ -1,12 +1,15 @@
+import type { BenchmarkId } from '../simulation/benchmarks';
+import { BenchmarkScenarios } from './BenchmarkScenarios';
 import { InterventionSchedule } from './InterventionSchedule';
 import type { ExpeditionCommand, ExpeditionSnapshot, ScientificObjective } from '../simulation/types';
 import { scientificObjectives } from '../simulation/science';
 import { MissionInstructions } from './MissionInstructions';
 import { StormControl } from './StormControl';
 
-export function MissionControl({ snapshot, dispatch }: { snapshot: ExpeditionSnapshot; dispatch: (command: ExpeditionCommand) => void }) {
+export function MissionControl({ snapshot, dispatch, selectBenchmark }: { snapshot: ExpeditionSnapshot; selectBenchmark: (id: BenchmarkId | null) => void; dispatch: (command: ExpeditionCommand) => void }) {
   const { status } = snapshot;
   return <>
+    <BenchmarkScenarios snapshot={snapshot} onSelect={selectBenchmark} />
     <p className="memory-note">{snapshot.area.name} · {snapshot.area.width} × {snapshot.area.depth} grid · {snapshot.durationMs / 60_000}-minute expedition</p>
     <section className="objective-block">
       <label className="field-label" htmlFor="expedition-controller">EXPEDITION CONTROLLER</label>

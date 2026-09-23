@@ -43,6 +43,8 @@ Version 10 records preserve these alternatives through local saving, validated i
 - Bun for dependency management, package scripts, and expedition tests.
 - A small Bun backend using the official TypeSafe JavaScript SDK.
 
+[Jev decision lab ticket 13](.scratch/jev-decision-lab/issues/13-offer-tuned-benchmark-scenarios.md) adds **Evidence survey**, **Changing priorities**, and **Storm response** to the Mission panel's benchmark selector. Inspect conditions, run either controller, then use the saved expedition's matched-baseline flow. All three use the eighteen-minute world. [Benchmark calibration](docs/benchmark-scenarios.md) records full-run outcomes for every preset, failures, and scripted-provider demand of 39–87 attempts for normal runs. These measurements do not establish live Jev quality or spending. Version 13 records preserve the selected benchmark and actual conditions; older records keep their original replay behavior.
+
 ## Tooling
 
 Use **Bun 1.4.2**, pinned in `.bun-version` and `package.json`. Dependencies are locked in the Bun-generated `bun.lock`; use Bun for dependency changes. Vite development and production builds run explicitly under Bun, following the [Bun Vite guide](https://bun.sh/guides/ecosystem/vite).
@@ -72,6 +74,7 @@ bun test tests/mission.test.ts   # exclusive presets, shared SDK input, safe bou
 bun test tests/decisions.test.ts # instruction edits, safe reconsideration, pending decisions, and stale results
 bun test tests/decision-viewing.test.ts # inspection, teaching, held-choice validity, guards, and legacy replay
 bun test tests/interventions.test.ts # schedules, simultaneous boundaries, pauses, manual reproduction, and legacy replay
+bun test tests/benchmarks.test.ts # benchmark presets, long runs, scripted provider, guards, and legacy replay
 bun test tests/matched-expeditions.test.ts # fresh keyless baselines, matched conditions, uncertain usage, and legacy replay
 bun test tests/decision-comparison.test.ts # same-input alternatives, routes, failures, immutable evidence, and legacy replay
 bun test tests/cadence.test.ts # provider request counts, coalesced triggers, resource boundaries, and legacy cadence

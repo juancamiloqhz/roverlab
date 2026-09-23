@@ -1,3 +1,4 @@
+import type { BenchmarkReference } from '../simulation/benchmarks';
 import type { ExpeditionRecord } from '../simulation/types';
 import { presetAdherence } from '../records/matching';
 import { formatInferenceCost } from './InferenceUsage';
@@ -43,6 +44,7 @@ export function ControllerProvenance({ record }: { record: ExpeditionRecord }) {
   const baseline = record.decisions.filter(decision => decision.controller === 'baseline');
   const jev = record.decisions.filter(decision => decision.controller === 'typesafe');
   return <>
+    <BenchmarkProvenance benchmark={record.startingConditions.benchmark} />
     <p>Record version {record.version} · Simulation {record.startingConditions.simulationVersion ?? 'legacy grid rules'} · Cadence {record.startingConditions.decisionCadence ?? 'legacy observation boundaries'}.</p>
     <p>Baseline decision versions: {[...new Set(baseline.map(decision => decision.baseline?.version ?? 'Unavailable'))].join(', ') || 'No baseline decisions'}.</p>
     <details><summary>Controller versions by decision and submission</summary>
@@ -60,5 +62,12 @@ export function ControllerProvenance({ record }: { record: ExpeditionRecord }) {
     </details>
     {record.matchedFrom && <p>Matching source: {record.matchedFrom.recordId} · Record version {record.matchedFrom.recordVersion} · {record.matchedFrom.scheduleBasis} schedule.</p>}
     <p>Manual requests in this run: {record.results.interventions?.history.filter(item => item.source === 'manual').length ?? 'Unavailable in legacy record'}. Inspect the schedule for requested and delivered events.</p>
+  </>;
+}
+
+export function BenchmarkProvenance({ benchmark }: { benchmark?: BenchmarkReference }) {
+  return <>
+    <p>Selected benchmark: {benchmark ? `${benchmark.name} v${benchmark.version} · ${benchmark.id}` : 'No benchmark recorded'}.</p>
+    {benchmark && <p>{benchmark.description} Later edits remain in the mission history and schedule.</p>}
   </>;
 }

@@ -22,7 +22,7 @@ export function recordedSchedule(record: ExpeditionRecord): InterventionSchedule
 }
 
 function simulationSettings(record: ExpeditionRecord) {
-  const { scenario, objective, rubric, instructions, mission, controller, inferenceLimits, interventionSchedule,
+  const { benchmark, scenario, objective, rubric, instructions, mission, controller, inferenceLimits, interventionSchedule,
     simulationVersion = 'grid-expedition-v1', ...settings } = record.startingConditions;
   return { simulationVersion, ...settings };
 }
@@ -42,6 +42,7 @@ function missionRequests(record: ExpeditionRecord) {
 export function compareExpeditionRecords(left: ExpeditionRecord, right: ExpeditionRecord) {
   const records = [left, right];
   return {
+    benchmark: sameRecordData(left.startingConditions.benchmark, right.startingConditions.benchmark),
     scenario: sameRecordData(left.startingConditions.scenario, right.startingConditions.scenario),
     simulation: sameRecordData(simulationSettings(left), simulationSettings(right)),
     objective: left.results.objective === right.results.objective,

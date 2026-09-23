@@ -98,7 +98,7 @@ export function ExpeditionComparison({ records, onClose, onOpen }: {
   const rubricMatches = conditions.rubric;
   const instructionsMatch = sameRecordData(instructionHistory(left), instructionHistory(right));
   const interventionsMatch = sameRecordData(interventions(left), interventions(right));
-  const conditionsMatch = scenarioMatches && settingsMatch && objectiveMatches && rubricMatches && conditions.missionRequests && conditions.schedule;
+  const conditionsMatch = conditions.benchmark && scenarioMatches && settingsMatch && objectiveMatches && rubricMatches && conditions.missionRequests && conditions.schedule;
   return <section className="expedition-comparison" aria-label="Expedition comparison">
     <p className="eyebrow">SAVED EXPEDITIONS · READ ONLY</p>
     <div className="record-toolbar"><h2>Compare expeditions</h2><button className="secondary" onClick={onClose}>Return to live expedition</button></div>
@@ -128,6 +128,8 @@ export function ExpeditionComparison({ records, onClose, onOpen }: {
       { label: 'Ending condition', render: record => ({ timeout: 'Time budget reached', 'manual-stop': 'Stopped by mission control', stranded: 'Stranded rover' })[record.results.endingCondition!] },
     ]} />
     <ComparisonTable title="Comparison conditions" records={records} rows={[
+      { label: 'Selected benchmark', matches: conditions.benchmark, render: record => record.startingConditions.benchmark
+        ? `${record.startingConditions.benchmark.name} v${record.startingConditions.benchmark.version} · ${record.startingConditions.benchmark.id}` : 'No benchmark recorded' },
       { label: 'Scientific objective', matches: objectiveMatches, render: record => scientificObjectives[record.results.objective] },
       { label: 'Delivery rubric', matches: rubricMatches, render: ({ results: { rubric } }) => `Unrelated ${rubric.unrelated} · Suggestive ${rubric.suggestive} · Strong evidence ${rubric['strong-evidence']}` },
       { label: 'Starting scenario', matches: scenarioMatches, render: record => <ScenarioConditions record={record} /> },

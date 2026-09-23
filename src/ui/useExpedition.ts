@@ -1,3 +1,4 @@
+import type { BenchmarkId } from '../simulation/benchmarks';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createExpedition, createMatchedBaseline, type ExpeditionSession } from '../simulation/expedition';
 import type { ExpeditionCommand, ExpeditionRecord } from '../simulation/types';
@@ -91,6 +92,14 @@ export function useExpedition(createSession: () => ExpeditionSession = createDef
     setDecisions(next.getDecisions());
   }
 
+  const selectBenchmark = (id: BenchmarkId | null) => {
+    if (session.getSnapshot().status !== 'ready') return;
+    const next = id ? createExpedition({ benchmark: id, typesafeController: createTypeSafeController() }) : sessionFactory.current();
+    if (session.getSnapshot().controller === 'typesafe') next.dispatch({ type: 'set-controller', controller: 'typesafe' });
+    matchedSession.current = null;
+    replaceSession(next);
+  };
+
   const startMatchedBaseline = (record: ExpeditionRecord) => {
     const status = session.getSnapshot().status;
     if (status === 'running' || status === 'paused') throw new Error('Stop or reset the active expedition before starting a matched baseline.');
@@ -100,5 +109,5 @@ export function useExpedition(createSession: () => ExpeditionSession = createDef
     replaceSession(next);
   };
 
-  return { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, startMatchedBaseline, getFullWorldView: session.getFullWorldView };
+  return { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, selectBenchmark, startMatchedBaseline, getFullWorldView: session.getFullWorldView };
 }

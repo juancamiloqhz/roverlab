@@ -114,7 +114,7 @@ test('a completed response may cross the estimated-cost stopping rule and its hi
   session.dispatch({ type: 'continue-with-baseline' });
   session.advanceWallTime(1000);
   const record = roundTrip(session);
-  expect(record.version).toBe(12);
+  expect(record.version).toBe(13);
   expect(record.events.filter(event => event.type === 'inference-limits-changed')).toHaveLength(2);
   expect(record.startingConditions.inferenceLimits).toEqual({ providerAttempts: 250, estimatedCost: 0.1 });
   expect(outbound).toBe(2);

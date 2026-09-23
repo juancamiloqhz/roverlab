@@ -24,7 +24,7 @@ const panels = { mission: 'Mission', evidence: 'Evidence', usage: 'Usage & recov
 type Panel = keyof typeof panels;
 
 export function App({ createSession }: { createSession?: () => ExpeditionSession } = {}) {
-  const { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, startMatchedBaseline, getFullWorldView } = useExpedition(createSession);
+  const { snapshot, decisions, completedRecords, refreshingUsage, usageRefreshMessage, refreshInferenceUsage, pauseForInspection, dispatch, selectBenchmark, startMatchedBaseline, getFullWorldView } = useExpedition(createSession);
   const [matchedSource, setMatchedSource] = useState<ExpeditionRecord | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<ExpeditionRecord | null>(null);
@@ -111,7 +111,7 @@ export function App({ createSession }: { createSession?: () => ExpeditionSession
       <aside id="expedition-panel" className={`expedition-panel${panel === 'records' ? ' record-panel' : ''}`} aria-label="Expedition panel" hidden={!panel}>
         <div className="expedition-panel-heading"><h2>{panel ? panels[panel] : ''}</h2><button className="secondary" ref={closeButton} onClick={closePanel} aria-label="Close panel">Close</button></div>
         <div className="expedition-panel-body" ref={panelBody}>
-          <div hidden={panel !== 'mission'}><MissionControl snapshot={snapshot} dispatch={dispatch} /></div>
+          <div hidden={panel !== 'mission'}><MissionControl snapshot={snapshot} dispatch={dispatch} selectBenchmark={id => { selectBenchmark(id); setMatchedSource(null); }} /></div>
           <div hidden={panel !== 'evidence'}>
             {selectedDecision && <button className="secondary" onClick={closePanel}>Return to live view</button>}
             <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} selectedDecisionId={snapshot.inspectionDecisionId} onSelect={inspectDecision} />

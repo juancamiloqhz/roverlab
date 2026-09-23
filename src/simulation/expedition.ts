@@ -1,3 +1,4 @@
+import { benchmarkScenario, type BenchmarkId } from './benchmarks';
 import { compareInterventions, interventionPhase, captureIntervention, emptyInterventionSchedule, interventionScheduleSchema, type Intervention, type InterventionSchedule } from './interventions';
 import { DECISION_CADENCE, type DecisionTrigger } from '../../shared/cadence';
 import { missionInstructions, missionPreset, type MissionPreferences } from '../../shared/mission';
@@ -22,7 +23,7 @@ const COLLECT_MS = 4_000;
 const RECHARGE_PER_SECOND = 5;
 const roundEnergy = (value: number) => Math.round(value * 1e9) / 1e9;
 
-type ExpeditionOptions = { interventionSchedule?: InterventionSchedule; wallNow?: () => number; scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController };
+type ExpeditionOptions = { benchmark?: BenchmarkId; interventionSchedule?: InterventionSchedule; wallNow?: () => number; scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController };
 type MatchedSource = { start: ExpeditionStartingConditions; provenance: NonNullable<ExpeditionRecord['matchedFrom']> };
 
 export function createExpedition(options: ExpeditionOptions = {}) {
@@ -43,12 +44,14 @@ class ReplayHistory {
 }
 
 function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory, matched?: MatchedSource) {
+  const selectedBenchmark = options.benchmark ? benchmarkScenario(options.benchmark) : undefined;
+  const benchmark = replay?.source.startingConditions.benchmark ?? matched?.start.benchmark ?? selectedBenchmark?.benchmark;
   const meaningfulBoundaries = replay ? !!replay.source.startingConditions.decisionCadence
     : matched ? !!matched.start.decisionCadence : true;
-  const scenario = structuredClone(replay?.source.startingConditions.scenario ?? options.scenario ?? authoredScenario);
+  const scenario = structuredClone(replay?.source.startingConditions.scenario ?? options.scenario ?? selectedBenchmark?.scenario ?? authoredScenario);
   const versionedSettings = !replay || replay.source.version >= 8;
   const durationMs = versionedSettings ? scenario.durationMs ?? 300_000 : 300_000;
-  const initialSchedule = interventionScheduleSchema.parse(replay?.source.startingConditions.interventionSchedule ?? options.interventionSchedule ?? emptyInterventionSchedule());
+  const initialSchedule = interventionScheduleSchema.parse(replay?.source.startingConditions.interventionSchedule ?? options.interventionSchedule ?? selectedBenchmark?.interventionSchedule ?? emptyInterventionSchedule());
   validateSchedule(initialSchedule);
   let batchingInterventions = false;
   const batteryCapacity = versionedSettings ? scenario.batteryCapacity ?? 100 : 100;
@@ -56,9 +59,9 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory, ma
   const fullTerrain = observe(scenario, scenario.base, 0, Infinity)
     .filter(item => item.kind === 'terrain')
     .map(({ id, position, terrain, blocked, region }) => ({ id, position, terrain, blocked, ...(region ? { region } : {}) }));
-  let objective = replay?.source.startingConditions.objective ?? options.objective ?? 'past-water';
+  let objective = replay?.source.startingConditions.objective ?? options.objective ?? selectedBenchmark?.objective ?? 'past-water';
   let instructions = replay?.source.startingConditions.instructions ?? matched?.start.instructions ?? '';
-  let mission: MissionPreferences = structuredClone(replay?.source.startingConditions.mission ?? matched?.start.mission ?? { mode: 'free-text', instructions });
+  let mission: MissionPreferences = structuredClone(replay?.source.startingConditions.mission ?? matched?.start.mission ?? selectedBenchmark?.mission ?? { mode: 'free-text', instructions });
   const baseline: ExpeditionController = { id: 'baseline', decide: input => {
     const selected = chooseBaselineDecision(input);
     return { selectedCandidateId: selected.action.id, baseline: selected.evidence };
@@ -74,6 +77,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory, ma
   const usageListeners = new Set<() => void>();
   let inFlight: { decision: Decision; expedition: number; abort: AbortController } | null = null;
   const startingConditions: ExpeditionStartingConditions = {
+    ...(benchmark ? { benchmark: structuredClone(benchmark) } : {}),
     ...(!replay || replay.source.version >= 11 ? { interventionSchedule: initialSchedule } : {}),
     ...(versionedSettings ? { simulationVersion: 'grid-expedition-v1' as const } : {}),
     ...(meaningfulBoundaries ? { decisionCadence: DECISION_CADENCE } : {}),
@@ -113,6 +117,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory, ma
   function initialState(): ExpeditionSnapshot {
     const initialMission = { version: 0, preferences: structuredClone(mission) };
     return {
+      ...(benchmark ? { benchmark: structuredClone(benchmark) } : {}),
       ...(startingConditions.interventionSchedule ? { interventions: { schedule: structuredClone(initialSchedule), history: [] } } : {}),
       ...(!replay || replay.source.version >= 9 ? { teachingMode: false, inspectionDecisionId: null, heldDecisionId: null } : {}),
       ...(startingConditions.mission ? { mission: { requested: structuredClone(initialMission), effective: structuredClone(initialMission),
@@ -618,7 +623,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory, ma
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 12, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 13, id: expeditionId, completedAt: new Date().toISOString(),
       ...(matched ? { matchedFrom: structuredClone(matched.provenance) } : {}),
       startingConditions: runStartingConditions, decisions, results: state,
     });
@@ -878,6 +883,11 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory, ma
       } else if (command.type === 'reset') {
         invalidateDecision();
         if (state.currentAction) record({ type: 'action-cancelled', action: state.currentAction, controller: actionController });
+        if (benchmark) {
+          objective = startingConditions.objective;
+          mission = structuredClone(startingConditions.mission!);
+          instructions = missionInstructions(mission);
+        }
         expedition++;
         expeditionId = crypto.randomUUID();
         runStartingConditions = { ...startingConditions, ...(state.mission ? { mission: structuredClone(mission) } : {}), objective, instructions, controller: controller.id };

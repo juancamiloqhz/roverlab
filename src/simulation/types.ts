@@ -1,3 +1,4 @@
+import type { BenchmarkReference } from './benchmarks';
 import type { Intervention, InterventionSchedule, InterventionState } from './interventions';
 import type { DecisionBoundary, DecisionTrigger } from '../../shared/cadence';
 import type { MissionPreferences, MissionRevision, MissionState, MissionPresetId } from '../../shared/mission';
@@ -121,6 +122,7 @@ export type ExpeditionCommand =
   | { type: 'set-controller'; controller: 'baseline' | 'typesafe' }
   | { type: 'set-speed'; speed: PlaybackSpeed };
 export type ExpeditionSnapshot = {
+  benchmark?: BenchmarkReference;
   interventions?: InterventionState;
   teachingMode?: boolean;
   inspectionDecisionId?: number | null;
@@ -207,6 +209,7 @@ export type EventDetail =
 export type ExpeditionEvent = EventDetail & { sequence: number; expedition: number; atMs: number };
 
 export type ExpeditionStartingConditions = {
+  benchmark?: BenchmarkReference;
   interventionSchedule?: InterventionSchedule;
   simulationVersion?: 'grid-expedition-v1';
   decisionCadence?: 'meaningful-boundaries-v1';
@@ -219,7 +222,7 @@ export type ExpeditionStartingConditions = {
 };
 export type ExpeditionRecord = {
   matchedFrom?: { recordId: string; recordVersion: number; scheduleBasis: 'recorded' | 'reconstructed-legacy' };
-  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12; id: string; completedAt: string;
+  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13; id: string; completedAt: string;
   startingConditions: ExpeditionStartingConditions;
   events: ExpeditionEvent[]; decisions: Decision[]; results: ExpeditionSnapshot;
 };
