@@ -1,3 +1,4 @@
+import { compareInterventions, interventionPhase, captureIntervention, emptyInterventionSchedule, interventionScheduleSchema, type Intervention, type InterventionSchedule } from './interventions';
 import { DECISION_CADENCE, type DecisionTrigger } from '../../shared/cadence';
 import { missionInstructions, missionPreset, type MissionPreferences } from '../../shared/mission';
 import { defaultInferenceLimits, inferenceGuard, inferenceLimitsSchema } from '../../shared/limits';
@@ -20,7 +21,7 @@ const COLLECT_MS = 4_000;
 const RECHARGE_PER_SECOND = 5;
 const roundEnergy = (value: number) => Math.round(value * 1e9) / 1e9;
 
-type ExpeditionOptions = { wallNow?: () => number; scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController };
+type ExpeditionOptions = { interventionSchedule?: InterventionSchedule; wallNow?: () => number; scenario?: Scenario; objective?: ScientificObjective; controller?: ExpeditionController; typesafeController?: ExpeditionController };
 
 export function createExpedition(options: ExpeditionOptions = {}) {
   return createSimulation(options).session;
@@ -44,6 +45,9 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   const scenario = structuredClone(replay?.source.startingConditions.scenario ?? options.scenario ?? authoredScenario);
   const versionedSettings = !replay || replay.source.version >= 8;
   const durationMs = versionedSettings ? scenario.durationMs ?? 300_000 : 300_000;
+  const initialSchedule = interventionScheduleSchema.parse(replay?.source.startingConditions.interventionSchedule ?? options.interventionSchedule ?? emptyInterventionSchedule());
+  validateSchedule(initialSchedule);
+  let batchingInterventions = false;
   const batteryCapacity = versionedSettings ? scenario.batteryCapacity ?? 100 : 100;
   // Reuse the world's terrain projection without installing it in rover knowledge.
   const fullTerrain = observe(scenario, scenario.base, 0, Infinity)
@@ -67,6 +71,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   const usageListeners = new Set<() => void>();
   let inFlight: { decision: Decision; expedition: number; abort: AbortController } | null = null;
   const startingConditions: ExpeditionStartingConditions = {
+    ...(!replay || replay.source.version >= 11 ? { interventionSchedule: initialSchedule } : {}),
     ...(versionedSettings ? { simulationVersion: 'grid-expedition-v1' as const } : {}),
     ...(meaningfulBoundaries ? { decisionCadence: DECISION_CADENCE } : {}),
     ...(!replay || replay.source.version >= 5 ? { mission: structuredClone(mission) } : {}),
@@ -105,6 +110,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
   function initialState(): ExpeditionSnapshot {
     const initialMission = { version: 0, preferences: structuredClone(mission) };
     return {
+      ...(startingConditions.interventionSchedule ? { interventions: { schedule: structuredClone(initialSchedule), history: [] } } : {}),
       ...(!replay || replay.source.version >= 9 ? { teachingMode: false, inspectionDecisionId: null, heldDecisionId: null } : {}),
       ...(startingConditions.mission ? { mission: { requested: structuredClone(initialMission), effective: structuredClone(initialMission),
         history: [{ ...structuredClone(initialMission), requestedAtMs: 0, appliedAtMs: 0 }] } } : {}),
@@ -219,13 +225,66 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     }
     if (mission.mode === 'free-text') record({ type: 'instructions-changed', instructions, version: state.instructionsVersion });
     else record({ type: 'mission-changed', mission: state.mission!.requested });
+    if (batchingInterventions) return;
     reconsiderAtWaypoint();
     applyMission();
     selectAction();
   }
 
+  function validateSchedule(schedule: InterventionSchedule) {
+    if (schedule.events.some(event => event.atMs > durationMs || (event.kind === 'storm'
+      && (event.storm.position.x >= scenario.width || event.storm.position.z >= scenario.depth)))) {
+      throw new RangeError('Interventions must fit the expedition duration and world.');
+    }
+  }
+
+  function introduceStorm(configuration: NonNullable<Scenario['dustStorm']>) {
+    const { durationMs, ...effects } = configuration;
+    storm = { ...structuredClone(effects), id: 'dust-storm', expiresAtMs: state.elapsedMs + durationMs };
+    state.stormIntroduced = true;
+    record({ type: 'storm-introduced', storm });
+    sense();
+    if (!batchingInterventions) {
+      reconsiderAtWaypoint();
+      selectAction();
+    }
+  }
+
+  function manualInterventionId() {
+    let index = state.interventions!.schedule.events.length + 1;
+    while (state.interventions!.schedule.events.some(event => event.id === `manual-${index}`)) index++;
+    return `manual-${index}`;
+  }
+
+  function requestIntervention(intervention: Intervention, source: 'manual' | 'scheduled') {
+    const interventions = state.interventions!;
+    if (source === 'manual') {
+      captureIntervention(interventions, intervention);
+    }
+    const revision = intervention.kind === 'mission' && !sameRecordData(intervention.mission, state.mission!.requested.preferences)
+      ? { missionVersion: state.instructionsVersion + 1 } : {};
+    interventions.history.push({ id: intervention.id, source, requestedAtMs: state.elapsedMs, ...revision });
+    record({ type: 'intervention-requested', intervention, source, ...revision });
+    if (intervention.kind === 'mission') changeMission(intervention.mission);
+    else introduceStorm(intervention.storm);
+  }
+
+  function applyScheduledInterventions(phase: ReturnType<typeof interventionPhase> = 'before-choice') {
+    if (!state.interventions) return;
+    const { schedule, history } = state.interventions;
+    batchingInterventions = phase === 'before-choice' || state.remainingMs === 0
+      || (state.battery === 0 && positionKey(state.rover.position) !== positionKey(scenario.base));
+    for (const intervention of schedule.events) {
+      if (intervention.atMs === state.elapsedMs && interventionPhase(intervention) === phase && !history.some(item => item.id === intervention.id)) {
+        requestIntervention(intervention, 'scheduled');
+      }
+    }
+    batchingInterventions = false;
+    applyMission();
+  }
+
   function selectAction() {
-    if (inFlight || state.status !== 'running' || state.currentAction || state.heldDecisionId || state.inspectionDecisionId || state.decisionFailure) return;
+    if (batchingInterventions || inFlight || state.status !== 'running' || state.currentAction || state.heldDecisionId || state.inspectionDecisionId || state.decisionFailure) return;
     if (checkUsageGuard()) return;
     if (replay && replay.next?.type !== 'decision-requested' && replay.next?.type !== 'mission-applied') return;
     applyMission();
@@ -556,7 +615,7 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     // Hold these run-owned references until any cancelled inference has settled,
     // even if mission control resets before its latency becomes available.
     pendingCompletions.set(expedition, {
-      format: 'roverlab-expedition', version: 10, id: expeditionId, completedAt: new Date().toISOString(),
+      format: 'roverlab-expedition', version: 11, id: expeditionId, completedAt: new Date().toISOString(),
       startingConditions: runStartingConditions, decisions, results: state,
     });
     completeRecord();
@@ -623,6 +682,8 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         }
       }
       if (state.battery === 0 && positionKey(state.rover.position) !== positionKey(scenario.base)) {
+        applyScheduledInterventions();
+        applyScheduledInterventions('after-step');
         sense();
         finish('stranded');
         return;
@@ -642,9 +703,16 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
       previousAction = action;
       state.currentAction = null;
     }
-    if (state.remainingMs === 0) finish('timeout');
-    else if (completed) selectAction();
-    else reconsiderAtWaypoint();
+    applyScheduledInterventions();
+    if (state.remainingMs === 0) {
+      applyScheduledInterventions('after-step');
+      finish('timeout');
+    } else {
+      if (completed) selectAction();
+      else reconsiderAtWaypoint();
+      // Replay consumes these requests between the original recorded choice events.
+      if (!replay) applyScheduledInterventions('after-step');
+    }
   }
 
   record(replay?.next?.type === 'reset' ? { type: 'reset', instructions } : { type: 'created' });
@@ -730,18 +798,32 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         continueInference();
       } else if (command.type === 'continue-inference' && state.status === 'paused') {
         continueInference();
+      } else if (command.type === 'set-intervention-schedule' && state.interventions && state.status === 'ready') {
+        const requested = interventionScheduleSchema.parse(command.schedule);
+        const retained = state.interventions.history.map(item => state.interventions!.schedule.events.find(event => event.id === item.id)!);
+        if (requested.events.some(event => retained.some(previous => previous.id === event.id && !sameRecordData(previous, event)))) {
+          throw new RangeError('A captured intervention cannot be replaced.');
+        }
+        const schedule = interventionScheduleSchema.parse({ ...requested, events: [
+          ...retained, ...requested.events.filter(event => !retained.some(previous => previous.id === event.id)),
+        ].sort(compareInterventions) });
+        validateSchedule(schedule);
+        if (!sameRecordData(schedule, state.interventions.schedule)) {
+          state.interventions.schedule = schedule;
+          record({ type: 'intervention-schedule-selected', schedule });
+        }
       } else if (command.type === 'introduce-storm' && scenario.dustStorm && !state.stormIntroduced && state.status !== 'ended') {
-        const { durationMs, ...configuration } = scenario.dustStorm;
-        storm = { ...structuredClone(configuration), id: 'dust-storm', expiresAtMs: state.elapsedMs + durationMs };
-        state.stormIntroduced = true;
-        record({ type: 'storm-introduced', storm });
-        sense();
-        reconsiderAtWaypoint();
-        selectAction();
-      } else if (command.type === 'set-instructions') {
-        changeMission({ mode: 'free-text', instructions: command.instructions });
-      } else if (command.type === 'set-mission-preset' && state.mission) {
-        changeMission({ mode: 'preset', preset: missionPreset(command.preset) });
+        if (state.interventions) {
+          if (state.interventions.schedule.events.some(event => event.kind === 'storm')) return;
+          requestIntervention({ id: manualInterventionId(), atMs: state.elapsedMs, phase: state.status === 'ready' ? 'setup' : 'after-step', kind: 'storm', storm: scenario.dustStorm }, 'manual');
+        } else introduceStorm(scenario.dustStorm);
+      } else if (command.type === 'set-instructions' || (command.type === 'set-mission-preset' && state.mission)) {
+        const preferences: MissionPreferences = command.type === 'set-instructions'
+          ? { mode: 'free-text', instructions: command.instructions } : { mode: 'preset', preset: missionPreset(command.preset) };
+        if (state.interventions && state.status !== 'ended'
+          && !sameRecordData(preferences, state.mission!.requested.preferences)) {
+          requestIntervention({ id: manualInterventionId(), atMs: state.elapsedMs, phase: state.status === 'ready' ? 'setup' : 'after-step', kind: 'mission', mission: preferences }, 'manual');
+        } else changeMission(preferences);
       } else if (command.type === 'set-controller' && state.status === 'ready') {
         const next = replay ? recordedController(command.controller) : command.controller === 'baseline' ? baseline : options.typesafeController;
         if (next && next.id !== controller.id) {
@@ -755,10 +837,13 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
         state.objective = objective;
         record({ type: 'objective-selected', objective, rubric: state.rubric });
       } else if (command.type === 'start' && state.status === 'ready') {
+        applyScheduledInterventions('setup');
         state.status = 'running';
         record({ type: 'started' });
         requestReconsideration('start');
+        applyScheduledInterventions();
         selectAction();
+        if (!replay) applyScheduledInterventions('after-step');
       } else if (command.type === 'pause' && state.status === 'running') {
         state.status = 'paused';
         record({ type: 'paused' });
@@ -825,6 +910,15 @@ function createSimulation(options: ExpeditionOptions, replay?: ReplayHistory) {
     while (replay?.next && replay.next.atMs === state.elapsedMs) {
       const event = replay.next;
       switch (event.type) {
+        case 'intervention-schedule-selected': session.dispatch({ type: 'set-intervention-schedule', schedule: event.schedule }); break;
+        case 'intervention-requested':
+          if (event.source === 'manual') requestIntervention(event.intervention, 'manual');
+          else {
+            const phase = interventionPhase(event.intervention);
+            if (phase === 'before-choice') throw new Error('Cannot replay an intervention outside its scheduled boundary.');
+            requestIntervention(event.intervention, 'scheduled');
+          }
+          break;
         case 'teaching-changed': session.dispatch({ type: 'set-teaching-mode', enabled: event.enabled }); break;
         case 'decision-inspected': session.dispatch({ type: 'inspect-decision', decisionId: event.decisionId }); break;
         case 'inspection-ended': session.dispatch({ type: 'end-inspection' }); break;

@@ -48,7 +48,7 @@ test('mission control configures allowances, raises a reached limit, and preserv
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export expedition JSON' }).click();
   const json = await readFile((await (await download).path())!, 'utf8');
-  expect(JSON.parse(json).version).toBe(10);
+  expect(JSON.parse(json).version).toBe(11);
   await page.getByLabel('Import expedition JSON').setInputFiles({ name: 'limits.json', mimeType: 'application/json', buffer: Buffer.from(json) });
   let apiCalls = 0;
   await page.route('**/api/**', route => { apiCalls++; return route.abort(); });

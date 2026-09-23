@@ -1,3 +1,4 @@
+import { InterventionSchedule } from './InterventionSchedule';
 import { MissionPreferences } from './MissionPreferences';
 import { InferenceAllowances } from './InferenceLimits';
 import { UsageSummary } from './InferenceUsage';
@@ -50,6 +51,7 @@ export function ExpeditionReplay({ session }: { session: ExpeditionSession }) {
         <div className="telemetry-row"><span>Discoveries / inspections</span><strong>{snapshot.discoveryCount} / {snapshot.inspectionCount}</strong></div>
         <div className="action-block"><span className="field-label">RECORDED ACTION</span><strong>{action ? `${action.kind.replaceAll('-', ' ')}${'target' in action ? ` · ${action.target.label}` : ''}` : 'None'}</strong></div>
         <MissionPreferences snapshot={snapshot} />
+        <InterventionSchedule snapshot={snapshot} />
       </aside>
     </div>
     <DecisionTimeline decisions={decisions} controllerHistory={snapshot.controllerHistory} selectedDecisionId={snapshot.inspectionDecisionId} onSelect={inspect} />

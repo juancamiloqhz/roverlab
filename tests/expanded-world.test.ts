@@ -19,7 +19,7 @@ test('the authored world records an eighteen-minute budget and resets its expand
   session.advanceWallTime(780_000);
   expect(session.getSnapshot()).toMatchObject({ status: 'ended', endingCondition: 'timeout', elapsedMs: 1_080_000 });
   const record = importExpeditionRecord(exportExpeditionRecord(session.getCompletedRecords()[0]!));
-  expect(record).toMatchObject({ version: 10, startingConditions: { simulationVersion: 'grid-expedition-v1',
+  expect(record).toMatchObject({ version: 11, startingConditions: { simulationVersion: 'grid-expedition-v1',
     durationMs: 1_080_000, batteryCapacity: 160, initialBattery: 160, scenario: { id: 'ochre-basin-v6' } } });
   expect(record.startingConditions.scenario.samples).toHaveLength(12);
   const replay = createReplay(record);

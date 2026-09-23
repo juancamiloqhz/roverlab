@@ -1,3 +1,4 @@
+import { InterventionSchedule } from './InterventionSchedule';
 import { MissionPreferences } from './MissionPreferences';
 import { InferenceLimitHistory } from './InferenceLimits';
 import { useEffect, useRef, useState } from 'react';
@@ -155,6 +156,7 @@ export function SavedExpeditionView({ record, onClose }: { record: ExpeditionRec
     <ExpeditionResults snapshot={record.results} />
     <InferenceLimitHistory record={record} />
     <MissionPreferences snapshot={record.results} />
+    <InterventionSchedule snapshot={record.results} />
     <p>Final mission instructions: {record.results.instructions || 'None supplied.'} · Version {record.results.instructionsVersion}</p>
     <p>Delivery rubric: unrelated {record.results.rubric.unrelated}, suggestive {record.results.rubric.suggestive}, strong evidence {record.results.rubric['strong-evidence']}.</p>
     {!replay && <>

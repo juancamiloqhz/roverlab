@@ -1,3 +1,4 @@
+import { InterventionSchedule } from './InterventionSchedule';
 import type { ExpeditionCommand, ExpeditionSnapshot, ScientificObjective } from '../simulation/types';
 import { scientificObjectives } from '../simulation/science';
 import { MissionInstructions } from './MissionInstructions';
@@ -25,6 +26,7 @@ export function MissionControl({ snapshot, dispatch }: { snapshot: ExpeditionSna
     </section>
     <MissionInstructions snapshot={snapshot} dispatch={dispatch} />
 
+    <InterventionSchedule snapshot={snapshot} dispatch={dispatch} />
     <StormControl snapshot={snapshot} dispatch={dispatch} />
   </>;
 }

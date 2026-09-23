@@ -179,3 +179,13 @@ body { min-width: 320px; }
 @media (max-width: 700px) {
   .decision-target.selected, .decision-target.baseline-alternative { max-width: 210px; white-space: normal; }
 }
+
+.intervention-schedule { margin: 20px 0; padding: 16px; border: 1px solid #465047; border-radius: 8px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.intervention-schedule h3 { margin: 0 0 10px; }
+.intervention-schedule p { color: #bec6b4; }
+.intervention-schedule ol { padding-left: 20px; }
+.intervention-schedule li { padding: 12px 0; border-top: 1px solid #465047; }
+.intervention-schedule strong { color: #d2edc5; font-variant-numeric: tabular-nums; }
+.intervention-schedule blockquote { margin: 10px 0; white-space: pre-wrap; }
+.intervention-schedule summary { cursor: pointer; }
+.intervention-schedule summary:focus-visible { outline: 2px solid #b8efc6; outline-offset: 3px; }

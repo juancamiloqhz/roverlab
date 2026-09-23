@@ -1,3 +1,5 @@
+import { interventionScheduleSchema, interventionSchema, interventionStateSchema } from '../simulation/interventions';
+import { hasConsistentInterventions } from './interventions';
 import { decisionTriggerSchema } from '../../shared/cadence';
 import { missionPreferencesSchema, missionRevisionSchema, missionStateSchema, missionInstructions } from '../../shared/mission';
 import { inferenceLimitsSchema, usagePauseSchema } from '../../shared/limits';
@@ -30,6 +32,7 @@ const history = z.array(z.strictObject({ controller, atMs: number, firstDecision
 const observations = z.array(observationSchema).max(10_000);
 
 const startingConditions: z.ZodType<ExpeditionStartingConditions> = z.strictObject({
+  interventionSchedule: interventionScheduleSchema.optional(),
   simulationVersion: z.literal('grid-expedition-v1').optional(),
   decisionCadence: z.literal('meaningful-boundaries-v1').optional(),
   mission: missionPreferencesSchema.optional(),
@@ -84,6 +87,8 @@ const decision: z.ZodType<Decision> = z.strictObject({
 
 const eventFields = { sequence: integer, expedition: integer.positive(), atMs: number };
 const event: z.ZodType<ExpeditionEvent> = z.discriminatedUnion('type', [
+  z.strictObject({ ...eventFields, type: z.literal('intervention-schedule-selected'), schedule: interventionScheduleSchema }),
+  z.strictObject({ ...eventFields, type: z.literal('intervention-requested'), intervention: interventionSchema, source: z.enum(['scheduled', 'manual']), missionVersion: integer.optional() }),
   z.strictObject({ ...eventFields, type: z.literal('teaching-changed'), enabled: z.boolean() }),
   z.strictObject({ ...eventFields, type: z.enum(['decision-inspected', 'decision-held']), decisionId: integer.positive() }),
   z.strictObject({ ...eventFields, type: z.literal('inspection-ended') }),
@@ -123,6 +128,7 @@ const event: z.ZodType<ExpeditionEvent> = z.discriminatedUnion('type', [
 ]);
 
 const results: z.ZodType<ExpeditionSnapshot> = z.strictObject({
+  interventions: interventionStateSchema.optional(),
   teachingMode: z.boolean().optional(), inspectionDecisionId: z.null().optional(), heldDecisionId: z.null().optional(),
   mission: missionStateSchema.optional(),
   inferenceLimits: inferenceLimitsSchema.optional(), acknowledgedAttemptIds: z.array(z.uuid()).max(20_000).optional(),
@@ -141,7 +147,7 @@ const results: z.ZodType<ExpeditionSnapshot> = z.strictObject({
 });
 
 const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
-  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10)]), id: z.uuid(), completedAt: z.iso.datetime(),
+  format: z.literal('roverlab-expedition'), version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10), z.literal(11)]), id: z.uuid(), completedAt: z.iso.datetime(),
   startingConditions, events: z.array(event).min(1).max(100_000), decisions: z.array(decision).max(10_000), results,
 }).refine(record => {
   const { results: final, startingConditions: start, decisions, events } = record;
@@ -223,12 +229,12 @@ const recordSchema: z.ZodType<ExpeditionRecord> = z.strictObject({
       event.type === 'decision-requested' || event.type === 'decision-settled' ? [event.decision] : [])];
     return decisions.every(item => (record.version >= 10 && item.controller === 'typesafe') === !!item.baselineAlternative);
   })
-  .refine(hasConsistentHistory);
+  .refine(hasConsistentHistory).refine(hasConsistentInterventions);
 
 export const MAX_RECORD_BYTES = 32 * 1024 * 1024;
 export function validateExpeditionRecord(value: unknown): ExpeditionRecord {
   const parsed = recordSchema.safeParse(value);
-  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, 4, 5, 6, 7, 8, 9, or 10 JSON export with valid history and results.');
+  if (!parsed.success) throw new Error('Invalid expedition record. Choose a complete RoverLab version 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, or 11 JSON export with valid history and results.');
   return parsed.data;
 }
 export function importExpeditionRecord(json: string): ExpeditionRecord {

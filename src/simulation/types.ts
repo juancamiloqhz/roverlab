@@ -1,3 +1,4 @@
+import type { Intervention, InterventionSchedule, InterventionState } from './interventions';
 import type { DecisionBoundary, DecisionTrigger } from '../../shared/cadence';
 import type { MissionPreferences, MissionRevision, MissionState, MissionPresetId } from '../../shared/mission';
 import type { BaselineEvidence } from '../../shared/baseline';
@@ -106,6 +107,7 @@ export type ControllerInput = {
 export type PlaybackSpeed = 1 | 2 | 4;
 export type EndingCondition = 'timeout' | 'manual-stop' | 'stranded';
 export type ExpeditionCommand =
+  | { type: 'set-intervention-schedule'; schedule: InterventionSchedule }
   | { type: 'set-teaching-mode'; enabled: boolean }
   | { type: 'inspect-decision'; decisionId: number }
   | { type: 'end-inspection' | 'continue-choice' }
@@ -119,6 +121,7 @@ export type ExpeditionCommand =
   | { type: 'set-controller'; controller: 'baseline' | 'typesafe' }
   | { type: 'set-speed'; speed: PlaybackSpeed };
 export type ExpeditionSnapshot = {
+  interventions?: InterventionState;
   teachingMode?: boolean;
   inspectionDecisionId?: number | null;
   heldDecisionId?: number | null;
@@ -165,6 +168,8 @@ export type ExpeditionSnapshot = {
   memory: Observation[];
 };
 export type EventDetail =
+  | { type: 'intervention-schedule-selected'; schedule: InterventionSchedule }
+  | { type: 'intervention-requested'; intervention: Intervention; source: 'scheduled' | 'manual'; missionVersion?: number }
   | { type: 'teaching-changed'; enabled: boolean }
   | { type: 'decision-inspected' | 'decision-held'; decisionId: number }
   | { type: 'inspection-ended' }
@@ -202,6 +207,7 @@ export type EventDetail =
 export type ExpeditionEvent = EventDetail & { sequence: number; expedition: number; atMs: number };
 
 export type ExpeditionStartingConditions = {
+  interventionSchedule?: InterventionSchedule;
   simulationVersion?: 'grid-expedition-v1';
   decisionCadence?: 'meaningful-boundaries-v1';
   mission?: MissionPreferences;
@@ -212,7 +218,7 @@ export type ExpeditionStartingConditions = {
   waitMs: number; inspectMs: number; collectMs: number; cargoCapacity: number; controller: ExpeditionController['id'];
 };
 export type ExpeditionRecord = {
-  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10; id: string; completedAt: string;
+  format: 'roverlab-expedition'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11; id: string; completedAt: string;
   startingConditions: ExpeditionStartingConditions;
   events: ExpeditionEvent[]; decisions: Decision[]; results: ExpeditionSnapshot;
 };
